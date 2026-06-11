@@ -1,0 +1,8 @@
+{
+  "name": "Divotech | Precision High Voltage Systems",
+  "description": "Leading Indian manufacturer of High Voltage DC Power Supplies and X-Ray Generators. Specialists in custom HV engineering and industrial solutions based in Hyderabad.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
