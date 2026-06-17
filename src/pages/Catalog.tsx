@@ -36,7 +36,7 @@ export default function Catalog() {
   return (
     <div className="bg-slate-50 min-h-screen py-12">
       <Helmet>
-        <title>Product Catalog | Vidyut HV Systems</title>
+        <title>Product Catalog | Divo Technologies Pvt. Ltd.</title>
       </Helmet>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

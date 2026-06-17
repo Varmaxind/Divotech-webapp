@@ -58,7 +58,7 @@ export default function ProductDetail() {
   return (
     <div className="bg-slate-50 min-h-screen pb-24">
       <Helmet>
-        <title>{product.name} | Vidyut HV Systems</title>
+        <title>{product.name} | Divo Technologies Pvt. Ltd.</title>
       </Helmet>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
