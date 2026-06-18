@@ -70,7 +70,7 @@ export default function AIConsultant() {
                   <Bot className="h-5 w-5 text-white" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-sm tracking-tight text-white">Vidyut Tech Advisor</h3>
+                  <h3 className="font-bold text-sm tracking-tight text-white">Divo Tech Advisor</h3>
                   <div className="flex items-center gap-1.5">
                     <div className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse"></div>
                     <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Expert Online</span>

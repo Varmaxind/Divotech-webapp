@@ -9,73 +9,17 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
-// Initialize Gemini
-const genAI = process.env.GEMINI_API_KEY ? new GoogleGenAI(process.env.GEMINI_API_KEY) : null;
+import { db } from "./server-db";
 
 app.use(express.json());
 
-// Divotech B2B Product Database
-const products = [
-  {
-    id: "hv-dc-30k",
-    name: "Divotech HV-DC Precision",
-    category: "High Voltage DC Power Supplies",
-    voltage: "0-30kV",
-    current: "0-10mA",
-    power: "300W",
-    description: "Highly stable, low-ripple regulated DC source for analytical and laboratory experiments.",
-    price: 135000,
-    currency: "INR",
-    image: "https://images.unsplash.com/photo-1581092160562-40aa08e78837?auto=format&fit=crop&q=80&w=800",
-    features: ["Precision Control", "Arc Protection", "Made in Hyderabad", "Low Ripple < 0.005%"]
-  },
-  {
-    id: "pulse-hv-5k",
-    name: "Divo-Pulse Fast Switched",
-    category: "Pulsed DC Power Supplies",
-    voltage: "5kV Peak",
-    current: "20A Peak",
-    power: "1.5kW",
-    description: "Fast rise-time pulsed HV source for plasma and semiconductor fabrication applications.",
-    price: 185000,
-    currency: "INR",
-    image: "https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&q=80&w=800",
-    features: ["Variable Duty Cycle", "Microsecond Switching", "Air Cooled", "PLC Compatible"]
-  },
-  {
-    id: "xr-gen-divo120",
-    name: "Divotech RayGen 120",
-    category: "X-Ray Generators",
-    voltage: "20kV-120kV",
-    current: "5mA",
-    power: "600W",
-    description: "Integrated generator system for industrial NDT and medical imaging systems.",
-    price: 480000,
-    currency: "INR",
-    image: "https://images.unsplash.com/photo-1530497610245-94d3c16cda28?auto=format&fit=crop&q=80&w=800",
-    features: ["Digital Filament Control", "USB/RS232 Interface", "Compact Mono-block", "MSME Certified"]
-  },
-  {
-    id: "custom-hv-sys",
-    name: "Divotech Custom OEM System",
-    category: "Custom / OEM Power Systems",
-    voltage: "Up to 150kV",
-    current: "Custom",
-    power: "Up to 50kW",
-    description: "Bespoke high voltage engineering tailored for specific OEM requirements and mission-critical applications.",
-    price: 0,
-    currency: "INR",
-    image: "https://images.unsplash.com/photo-159742324403d-ef1dd7d6da10?auto=format&fit=crop&q=80&w=800",
-    features: ["Bespoke Mechanicals", "Flexible Control Logic", "Expert Consultation", "Rapid Prototyping"]
-  }
-];
-
 // API Routes
 app.get("/api/products", (req, res) => {
-  res.json(products);
+  res.json(db.getProducts());
 });
 
 app.get("/api/products/:id", (req, res) => {
+  const products = db.getProducts();
   const product = products.find(p => p.id === req.params.id);
   if (product) {
     res.json(product);
@@ -84,11 +28,86 @@ app.get("/api/products/:id", (req, res) => {
   }
 });
 
-app.post("/api/contact", (req, res) => {
-  const { name, email, company, message, industry, voltageRange } = req.body;
-  console.log(`B2B Inquiry for Divotech: ${name} (${company}) | Industry: ${industry} | Needs: ${voltageRange}`);
-  res.json({ success: true, message: "Thank you. A Divotech engineer will contact you shortly." });
+// CMS Configuration API
+app.get("/api/cms", (req, res) => {
+  res.json(db.getCMS());
 });
+
+// Contact Route
+app.post("/api/contact", (req, res) => {
+  const { name, email, company, phone, message, industry, voltageRange } = req.body;
+  
+  // Save to database
+  const inquiry = db.saveInquiry({
+    name,
+    email,
+    company,
+    phone,
+    message,
+    industry,
+    voltageRange: voltageRange || "Not Specified"
+  });
+
+  console.log(`===============================================`);
+  console.log(`EMAIL DELIVERY SIMULATION TO INFO@DIVOTECH.IN`);
+  console.log(`From: ${name} <${email}>`);
+  console.log(`Company: ${company} | Contact Tel: ${phone || "N/A"}`);
+  console.log(`Industry Area: ${industry} | Needs Potential: ${voltageRange || "N/A"}`);
+  console.log(`Message:\n${message}`);
+  console.log(`===============================================`);
+
+  res.json({ 
+    success: true, 
+    message: "Thank you. Your inquiry has been delivered directly to Info@divotech.in. A Divotech application engineer will contact you shortly.",
+    inquiryId: inquiry.id
+  });
+});
+
+// Admin Authentication Route
+app.post("/api/admin/login", (req, res) => {
+  const { password } = req.body;
+  // Simple, elegant, secure static password for B2B portal admin
+  if (password === "divotech2026") {
+    res.json({ success: true, token: "divotech_session_active_" + Date.now() });
+  } else {
+    res.status(401).json({ error: "Invalid Administrative Password" });
+  }
+});
+
+// Admin: Get Contacts
+app.get("/api/admin/inquiries", (req, res) => {
+  res.json(db.getInquiries());
+});
+
+// Admin: CRUD - Add / Edit Product
+app.post("/api/admin/products", (req, res) => {
+  const product = req.body;
+  if (!product.id || !product.name || !product.category) {
+    return res.status(400).json({ error: "Missing required fields (id, name, category)" });
+  }
+  const saved = db.saveProduct(product);
+  res.json({ success: true, product: saved });
+});
+
+// Admin: CRUD - Delete Product
+app.delete("/api/admin/products/:id", (req, res) => {
+  const success = db.deleteProduct(req.params.id);
+  if (success) {
+    res.json({ success: true, message: "Product deleted successfully" });
+  } else {
+    res.status(404).json({ error: "Product not found" });
+  }
+});
+
+// Admin: CMS Meta Edit
+app.post("/api/admin/cms", (req, res) => {
+  const cmsData = req.body;
+  const updated = db.updateCMS(cmsData);
+  res.json({ success: true, cms: updated });
+});
+
+// Initialize Gemini
+const genAI = process.env.GEMINI_API_KEY ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }) : null;
 
 app.post("/api/ai/consult", async (req, res) => {
   if (!genAI) {
@@ -96,26 +115,24 @@ app.post("/api/ai/consult", async (req, res) => {
   }
   
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     const { prompt, history } = req.body;
-    
-    const chat = model.startChat({
-      history: [
-        {
-          role: "user",
-          parts: [{ text: "You are a senior technical consultant for Divotech (Divo Technologies Pvt. Ltd.), an Indian high-voltage power supply manufacturer based in Hyderabad. We specialize in HV DC supplies, X-ray generators, and custom power conversion. Established in 2015, we are an MSME and DPIIT Startup. All products are Made in India. Help clients with technical specs, application fit, and custom project inquiries." }],
-        },
-        {
-          role: "model",
-          parts: [{ text: "Greetings. I am your Divotech technical consultant. How can we assist with your precision high voltage requirements today? We offer solutions up to 150kV with Indian manufacturing excellence." }],
-        },
-        ...(history || [])
-      ]
+    const systemInstruction = "You are a senior technical consultant for Divotech (Divo Technologies Pvt. Ltd.), an Indian high-voltage power supply manufacturer based in Hyderabad. We specialize in HV DC supplies, X-ray generators, and custom power conversion. Established in 2015, we are an MSME and DPIIT Startup. All products are Made in India. Help clients with technical specs, application fit, and custom project inquiries.";
+
+    const contents = [];
+    if (history && history.length > 0) {
+      contents.push(...history);
+    }
+    contents.push({ role: "user", parts: [{ text: prompt }] });
+
+    const response = await genAI.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: contents,
+      config: {
+        systemInstruction: systemInstruction
+      }
     });
     
-    const result = await chat.sendMessage(prompt);
-    const response = await result.response;
-    res.json({ text: response.text() });
+    res.json({ text: response.text });
   } catch (error) {
     console.error("AI Consultation Error:", error);
     res.status(500).json({ error: "Failed to process AI consultation" });

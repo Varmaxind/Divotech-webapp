@@ -12,12 +12,14 @@ interface Product {
   price: number;
   image: string;
   description: string;
+  specs?: Record<string, string>;
 }
 
 export default function Catalog() {
   const [products, setProducts] = useState<Product[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [inputFilter, setInputFilter] = useState("all");
 
   useEffect(() => {
     fetch("/api/products")
@@ -28,22 +30,39 @@ export default function Catalog() {
       });
   }, []);
 
-  const filtered = products.filter(p => 
-    p.name.toLowerCase().includes(search.toLowerCase()) || 
-    p.category.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = products.filter(p => {
+    const matchesSearch = p.name.toLowerCase().includes(search.toLowerCase()) || 
+                          p.category.toLowerCase().includes(search.toLowerCase());
+    
+    if (!matchesSearch) return false;
+    if (inputFilter === "all") return true;
+    
+    const inputVoltage = p.specs?.["Input Voltage"] || "";
+    if (inputFilter === "single-phase") {
+      return inputVoltage.toLowerCase().includes("single phase") || inputVoltage.toLowerCase().includes("1-phase");
+    }
+    if (inputFilter === "three-phase") {
+      return inputVoltage.toLowerCase().includes("three phase") || inputVoltage.toLowerCase().includes("3-phase");
+    }
+    if (inputFilter === "24v-dc") {
+      return inputVoltage.toLowerCase().includes("24v dc") || inputVoltage.toLowerCase().includes("24vdc");
+    }
+    
+    return true;
+  });
 
   return (
     <div className="bg-slate-50 min-h-screen py-12">
       <Helmet>
-        <title>Product Catalog | Vidyut HV Systems</title>
+        <title>Product Catalog | Divo Technologies</title>
+        <meta name="description" content="Explore our catalog of high voltage products including regulated DC supplies, pulsed high voltage converters, and encapsulated X-ray sources." />
       </Helmet>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-6">
           <div>
-            <h1 className="text-4xl font-bold text-slate-900 mb-4 uppercase tracking-tight">Technical <span className="text-amber-600 italic font-serif">Catalog</span></h1>
-            <p className="text-slate-600 max-w-xl">Browse our complete range of high-voltage solutions optimized for industrial reliability and precision.</p>
+            <h1 className="text-4xl font-bold text-slate-900 mb-4 uppercase tracking-tight">Technical <span className="text-blue-700 italic">Catalog</span></h1>
+            <p className="text-slate-600 max-w-xl">Browse our complete range of high-voltage solutions optimized for industrial reliability, lab research, and extreme precision.</p>
           </div>
           
           <div className="relative w-full md:w-96">
@@ -53,15 +72,52 @@ export default function Catalog() {
               placeholder="Search specifications or models..." 
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full bg-white border border-slate-200 rounded-xl py-4 pl-12 pr-4 focus:ring-2 focus:ring-amber-500 outline-none transition-all shadow-sm"
+              className="w-full bg-white border border-slate-200 rounded-xl py-4 pl-12 pr-4 focus:ring-2 focus:ring-blue-500 outline-none transition-all shadow-sm font-medium text-slate-800"
             />
+          </div>
+        </div>
+
+        {/* Input Voltage Specification Guide */}
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 mb-8 shadow-sm">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+            <div>
+              <span className="text-[10px] font-extrabold text-blue-600 uppercase tracking-widest block mb-1">Power Input Configurator</span>
+              <h3 className="text-base font-bold text-slate-800">Filter by Manufacturing Supply Voltages</h3>
+              <p className="text-xs text-slate-500 mt-1">Our products are custom built for local and international grids supporting Single Phase, Three Phase AC, or continuous 24V DC battery bus line inputs.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button 
+                onClick={() => setInputFilter("all")} 
+                className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all border ${inputFilter === "all" ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/15" : "bg-slate-50 text-slate-600 border-slate-100 hover:bg-slate-100"}`}
+              >
+                All Inputs
+              </button>
+              <button 
+                onClick={() => setInputFilter("single-phase")} 
+                className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all border ${inputFilter === "single-phase" ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/15" : "bg-slate-50 text-slate-600 border-slate-100 hover:bg-slate-100"}`}
+              >
+                Single Phase (220V)
+              </button>
+              <button 
+                onClick={() => setInputFilter("three-phase")} 
+                className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all border ${inputFilter === "three-phase" ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/15" : "bg-slate-50 text-slate-600 border-slate-100 hover:bg-slate-100"}`}
+              >
+                Three Phase (415V)
+              </button>
+              <button 
+                onClick={() => setInputFilter("24v-dc")} 
+                className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all border ${inputFilter === "24v-dc" ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/15" : "bg-slate-50 text-slate-600 border-slate-100 hover:bg-slate-100"}`}
+              >
+                24V DC Bus
+              </button>
+            </div>
           </div>
         </div>
 
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {[1, 2, 3].map(i => (
-              <div key={i} className="bg-white border border-slate-200 rounded-2xl h-[450px] animate-pulse"></div>
+              <div key={i} className="bg-white border border-slate-200 rounded-2xl h-[450px] animate-pulse" />
             ))}
           </div>
         ) : (
@@ -78,27 +134,39 @@ export default function Catalog() {
                   <img 
                     src={product.image} 
                     alt={product.name} 
-                    className="w-full h-full object-cover grayscale brightness-110 transition-transform duration-500"
+                    className="w-full h-full object-cover grayscale brightness-110 group-hover:scale-105 transition-transform duration-500"
+                    referrerPolicy="no-referrer"
                   />
-                  <div className="absolute top-3 left-3">
-                    <span className="bg-white/80 backdrop-blur-md text-slate-900 text-[9px] font-bold px-2 py-1 rounded shadow-sm border border-slate-100 uppercase tracking-widest">
+                  <div className="absolute top-3 left-3 max-w-[85%]">
+                    <span className="bg-white/90 backdrop-blur-md text-slate-900 text-[8px] font-extrabold px-2 py-1 rounded shadow-sm border border-slate-100 uppercase tracking-wider block truncate">
                       {product.category}
                     </span>
                   </div>
                 </div>
                 
                 <div className="px-5 pb-5 flex flex-col flex-grow">
-                  <h3 className="font-bold text-slate-900 group-hover:text-blue-700 transition-colors">{product.name}</h3>
-                  <p className="text-[11px] text-slate-400 mt-1 mb-6 line-clamp-1">{product.voltage} Module | Precision Power</p>
+                  <h3 className="font-bold text-slate-900 group-hover:text-blue-700 transition-colors uppercase italic tracking-tight">{product.name}</h3>
+                  <p className="text-[11px] text-slate-400 mt-1 mb-3 line-clamp-1 font-semibold uppercase tracking-wider">{product.voltage} Module | Precision Power</p>
                   
-                  <div className="mt-auto flex items-center justify-between">
+                  {product.specs?.["Input Voltage"] && (
+                    <div className="mb-4 bg-blue-50/50 border border-blue-100 px-3 py-1.5 rounded-lg flex items-center gap-2">
+                      <Zap className="h-3 w-3 text-blue-600 fill-blue-100 shrink-0" />
+                      <span className="text-[9px] text-blue-700 font-extrabold uppercase tracking-wide truncate">
+                        Input: {product.specs["Input Voltage"]}
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="mt-auto flex items-center justify-between border-t border-slate-50 pt-4">
                     <div className="flex flex-col">
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Price</span>
-                      <span className="text-lg font-bold text-slate-900">₹{product.price.toLocaleString("en-IN")}</span>
+                      <span className="text-[8px] font-extrabold text-slate-400 uppercase tracking-widest">Pricing</span>
+                      <span className="text-base font-extrabold text-slate-900">
+                        {product.price > 0 ? `₹${product.price.toLocaleString("en-IN")}` : "Custom Quote"}
+                      </span>
                     </div>
                     <Link 
                       to={`/product/${product.id}`}
-                      className="p-2.5 bg-slate-100 text-slate-500 rounded-lg hover:bg-blue-700 hover:text-white transition-all shadow-sm"
+                      className="p-2.5 bg-slate-100 text-slate-500 rounded-xl hover:bg-blue-600 hover:text-white transition-all shadow-sm"
                     >
                       <ArrowRight className="h-4 w-4" />
                     </Link>

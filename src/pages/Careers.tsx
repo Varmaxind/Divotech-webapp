@@ -46,7 +46,7 @@ export default function Careers() {
            <Briefcase className="h-10 w-10 mx-auto mb-6 text-blue-500 opacity-50" />
            <h4 className="text-2xl font-bold mb-4 italic tracking-tight">No match found?</h4>
            <p className="text-slate-400 text-sm mb-8 font-medium">We are always open to hearing from senior talent in HV power electronics.</p>
-           <a href="mailto:careers@divotech.in" className="inline-block border-b-2 border-white pb-1 text-xs font-bold uppercase tracking-[0.2em] hover:text-blue-400 hover:border-blue-400 transition-colors">Send CV to careers@divotech.in</a>
+           <a href="mailto:info@divotech.in" className="inline-block border-b-2 border-white pb-1 text-xs font-bold uppercase tracking-[0.2em] hover:text-blue-400 hover:border-blue-400 transition-colors">Send CV to info@divotech.in</a>
         </div>
       </div>
     </div>

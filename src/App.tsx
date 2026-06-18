@@ -13,6 +13,7 @@ import Applications from "./pages/Applications";
 import CustomProjects from "./pages/CustomProjects";
 import Resources from "./pages/Resources";
 import Careers from "./pages/Careers";
+import Admin from "./pages/Admin";
 
 // Context for Cart
 interface CartItem {
@@ -80,6 +81,7 @@ export default function App() {
                 <Route path="/careers" element={<Careers />} />
                 <Route path="/cart" element={<Cart />} />
                 <Route path="/contact" element={<Contact />} />
+                <Route path="/admin" element={<Admin />} />
               </Routes>
             </main>
             <Footer />

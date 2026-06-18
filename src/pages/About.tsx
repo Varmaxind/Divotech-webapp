@@ -40,6 +40,7 @@ export default function About() {
                 src="https://images.unsplash.com/photo-1581092160562-40aa08e78837?auto=format&fit=crop&q=80&w=1200" 
                 alt="Divotech Facility"
                 className="w-full h-full object-cover grayscale brightness-110"
+                referrerPolicy="no-referrer"
               />
             </div>
           </div>

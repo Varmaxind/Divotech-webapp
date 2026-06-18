@@ -10,7 +10,7 @@ export default function Cart() {
   return (
     <div className="bg-slate-50 min-h-screen py-16">
       <Helmet>
-        <title>Your Order | Vidyut HV Systems</title>
+        <title>Your Order | Divo Technologies</title>
       </Helmet>
 
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -38,7 +38,7 @@ export default function Cart() {
                   className="bg-white border border-slate-200 rounded-2xl p-6 flex items-center gap-6 shadow-sm"
                 >
                   <div className="h-24 w-24 bg-slate-100 rounded-xl overflow-hidden flex-shrink-0 flex items-center justify-center p-2">
-                    <img src={item.image} alt={item.name} className="max-h-full max-w-full object-contain filter grayscale" />
+                    <img src={item.image} alt={item.name} className="max-h-full max-w-full object-contain filter grayscale" referrerPolicy="no-referrer" />
                   </div>
                   <div className="flex-grow">
                     <h3 className="font-bold text-slate-900">{item.name}</h3>

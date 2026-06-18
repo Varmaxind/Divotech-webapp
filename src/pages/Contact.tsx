@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { Helmet } from "react-helmet-async";
 import { Mail, Phone, MapPin, Send, CheckCircle2, Factory, Loader2 } from "lucide-react";
 
@@ -43,9 +43,10 @@ export default function Contact() {
                 <div>
                   <h4 className="font-bold text-slate-900 mb-2 uppercase text-[10px] tracking-widest text-slate-400">Our Engineering HQ</h4>
                   <p className="text-slate-600 text-sm leading-relaxed font-medium">
-                    Divotech Bhavan, Industrial Park Phase II<br />
-                    Genome Valley, Turkapally<br />
-                    Hyderabad, Telangana 500101, India
+                    Plot no 28, House No : 5-5-35/80/1A<br />
+                    Kukatpally Industrial Area<br />
+                    RangaReddydt, Hyderabad - 500072<br />
+                    Telangana, INDIA
                   </p>
                 </div>
               </div>
