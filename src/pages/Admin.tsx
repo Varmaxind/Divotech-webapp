@@ -21,6 +21,13 @@ interface Product {
   features: string[];
   specs: Record<string, string>;
   applications: string[];
+  brochureUrl?: string;
+}
+
+interface Model {
+  id: string;
+  name: string;
+  applications?: string[];
 }
 
 interface Inquiry {
@@ -50,15 +57,25 @@ interface CMSData {
   }>;
 }
 
+const APPLICATION_SECTIONS = [
+  "Industrial Processes",
+  "Vacuum & Plasma",
+  "Analytical Instrumentation",
+  "Inspection & Test Equipment",
+  "Semiconductor Fabrication",
+  "Research & Academia"
+];
+
 export default function Admin() {
   const [password, setPassword] = useState("");
   const [token, setToken] = useState<string | null>(localStorage.getItem("admin_token"));
   const [loginError, setLoginError] = useState("");
-  const [activeTab, setActiveTab] = useState<"inquiries" | "products" | "cms">("inquiries");
+  const [activeTab, setActiveTab] = useState<"inquiries" | "products" | "cms" | "models">("inquiries");
   
   // Data State
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [models, setModels] = useState<Model[]>([]);
   const [cms, setCms] = useState<CMSData | null>(null);
   
   // UI Loading / Feedback State
@@ -66,11 +83,18 @@ export default function Admin() {
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [selectedInquiry, setSelectedInquiry] = useState<Inquiry | null>(null);
 
+  // New Model Form State
+  const [newModel, setNewModel] = useState({
+    id: "",
+    name: "",
+    applications: [] as string[]
+  });
+
   // New Product Form State
   const [newProd, setNewProd] = useState({
     id: "",
     name: "",
-    category: "High Voltage Regulated DC Power Supplies",
+    category: "",
     modelNumber: "",
     voltage: "",
     current: "",
@@ -80,7 +104,8 @@ export default function Admin() {
     image: "https://images.unsplash.com/photo-1581092160562-40aa08e78837?auto=format&fit=crop&q=80&w=800",
     featuresInput: "",
     specsInput: "Input Voltage: 220V AC\nLoad Regulation: < 0.01%\nPolarity: Positive/Negative",
-    applicationsInput: "Industrial Processes, Research & Academia"
+    applications: [] as string[],
+    brochureUrl: ""
   });
 
   // Verify / Load Admin Data
@@ -88,7 +113,7 @@ export default function Admin() {
     if (!token) return;
     setLoading(true);
     try {
-      const [productsRes, inquiriesRes, cmsRes] = await Promise.all([
+      const [productsRes, inquiriesRes, cmsRes, modelsRes] = await Promise.all([
         fetch("/api/products").then(r => r.json()),
         fetch("/api/admin/inquiries").then(r => {
           if (r.status === 401) {
@@ -98,12 +123,28 @@ export default function Admin() {
           }
           return r.json();
         }),
-        fetch("/api/cms").then(r => r.json())
+        fetch("/api/cms").then(r => r.json()),
+        fetch("/api/models").then(r => r.json())
       ]);
 
       setProducts(productsRes);
       setInquiries(inquiriesRes);
       setCms(cmsRes);
+      setModels(modelsRes);
+
+      // Pre-select first category and its applications if category is currently empty
+      if (modelsRes && modelsRes.length > 0) {
+        setNewProd(prev => {
+          if (!prev.category) {
+            return {
+              ...prev,
+              category: modelsRes[0].name,
+              applications: modelsRes[0].applications || []
+            };
+          }
+          return prev;
+        });
+      }
     } catch (e) {
       console.error("Admin Load Error", e);
     } finally {
@@ -154,7 +195,7 @@ export default function Admin() {
       return;
     }
 
-    // Parse features (one per line or separated by comma)
+    // Parse features (one per line)
     const features = newProd.featuresInput
       .split("\n")
       .map(f => f.trim())
@@ -171,27 +212,21 @@ export default function Admin() {
       }
     });
 
-    // Parse Applications list (comma separated)
-    const applications = newProd.applicationsInput
-      .split(",")
-      .map(a => a.trim())
-      .filter(a => a.length > 0);
-
     const payload: Product = {
       id: newProd.id.trim().toLowerCase().replace(/\s+/g, "-"),
       name: newProd.name.trim(),
-      category: newProd.category,
+      category: newProd.category || (models.length > 0 ? models[0].name : ""),
       modelNumber: newProd.modelNumber || newProd.id.toUpperCase(),
       voltage: newProd.voltage || "0V",
       current: newProd.current || "0A",
       power: newProd.power || "0W",
       description: newProd.description || "No specifications description provided.",
       price: Number(newProd.price) || 0,
-       // Provide standard currency
       image: newProd.image || "https://images.unsplash.com/photo-1581092160562-40aa08e78837?auto=format&fit=crop&q=80&w=800",
       features,
       specs,
-      applications
+      applications: newProd.applications,
+      brochureUrl: newProd.brochureUrl ? newProd.brochureUrl.trim() : undefined
     };
 
     setLoading(true);
@@ -207,7 +242,7 @@ export default function Admin() {
         setNewProd({
           id: "",
           name: "",
-          category: "High Voltage Regulated DC Power Supplies",
+          category: models.length > 0 ? models[0].name : "",
           modelNumber: "",
           voltage: "",
           current: "",
@@ -217,7 +252,8 @@ export default function Admin() {
           image: "https://images.unsplash.com/photo-1581092160562-40aa08e78837?auto=format&fit=crop&q=80&w=800",
           featuresInput: "",
           specsInput: "Input Voltage: 220V AC\nLoad Regulation: < 0.01%\nPolarity: Positive/Negative",
-          applicationsInput: "Industrial Processes, Research & Academia"
+          applications: models.length > 0 ? (models[0].applications || []) : [],
+          brochureUrl: ""
         });
         loadAdminData();
         setTimeout(() => setSaveStatus(null), 3000);
@@ -226,6 +262,67 @@ export default function Admin() {
       }
     } catch {
       alert("Error saving modular product.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Add Category Model Handler
+  const handleCreateModel = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newModel.id || !newModel.name) {
+      alert("ID and Name are required.");
+      return;
+    }
+    const payload = {
+      id: newModel.id.trim().toLowerCase().replace(/\s+/g, "-"),
+      name: newModel.name.trim(),
+      applications: newModel.applications
+    };
+    setLoading(true);
+    try {
+      const res = await fetch("/api/admin/models", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        setSaveStatus("Category model saved successfully!");
+        setNewModel({ id: "", name: "", applications: [] });
+        loadAdminData();
+        setTimeout(() => setSaveStatus(null), 3000);
+      } else {
+        alert("Failed to save category model.");
+      }
+    } catch {
+      alert("Error saving category model.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Delete Category Model Handler
+  const handleDeleteModel = async (id: string) => {
+    const productsInModel = products.filter(p => p.category.toLowerCase() === id.toLowerCase() || p.category === id);
+    if (productsInModel.length > 0) {
+      if (!confirm(`Warning: There are ${productsInModel.length} products associated with this category model. Deleting it may leave them uncategorized. Proceed?`)) {
+        return;
+      }
+    } else {
+      if (!confirm(`Are you sure you want to delete category model "${id}"?`)) return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/admin/models/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        setSaveStatus("Category model deleted successfully!");
+        loadAdminData();
+        setTimeout(() => setSaveStatus(null), 3000);
+      } else {
+        alert("Deletion failed.");
+      }
+    } catch {
+      alert("Error deleting category model.");
     } finally {
       setLoading(false);
     }
@@ -455,6 +552,22 @@ export default function Admin() {
               </span>
             </button>
 
+            <button 
+              onClick={() => setActiveTab("models")}
+              className={`w-full text-left px-4 py-4.5 rounded-2xl text-xs font-extrabold uppercase tracking-widest flex items-center justify-between transition-all cursor-pointer ${
+                activeTab === "models" 
+                ? "bg-slate-900 text-white shadow-md shadow-slate-900/10" 
+                : "bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-100"
+              }`}
+            >
+              <span className="flex items-center gap-3">
+                <Sliders className="h-5 w-5" /> Category Models
+              </span>
+              <span className="bg-blue-600/15 text-blue-700 font-mono text-[10px] px-2 py-0.5 rounded font-black">
+                {models.length}
+              </span>
+            </button>
+
             <div className="pt-6 border-t border-slate-100 mt-6 text-center text-[10px] text-slate-400 uppercase font-black tracking-widest">
               Secure TLS Tunneling Active
             </div>
@@ -644,16 +757,24 @@ export default function Admin() {
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                       <div>
-                        <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest block mb-1.5">Taxonomy Category</label>
+                        <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest block mb-1.5">Taxonomy Category (Dynamic Models)</label>
                         <select 
                           value={newProd.category}
-                          onChange={(e) => setNewProd({...newProd, category: e.target.value})}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            const modelObj = models.find(m => m.name === val || m.id === val);
+                            setNewProd({
+                              ...newProd,
+                              category: val,
+                              applications: modelObj?.applications || []
+                            });
+                          }}
                           className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 focus:ring-2 focus:ring-blue-500 outline-none transition-all font-semibold text-xs text-slate-800"
                         >
-                          <option value="High Voltage Regulated DC Power Supplies">High Voltage Regulated DC Power Supplies</option>
-                          <option value="X-Ray Power Supplies">X-Ray Power Supplies</option>
-                          <option value="Pulsed DC Power Supplies">Pulsed DC Power Supplies</option>
-                          <option value="Custom / OEM Power Systems">Custom / OEM Power Systems</option>
+                          <option value="">-- Select Dynamic Model --</option>
+                          {models.map(m => (
+                            <option key={m.id} value={m.name}>{m.name}</option>
+                          ))}
                         </select>
                       </div>
                       <div>
@@ -711,15 +832,27 @@ export default function Admin() {
                       </div>
                     </div>
 
-                    <div>
-                      <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest block mb-1.5">Core Product Showcase Image URL</label>
-                      <input 
-                        type="text"
-                        placeholder="https://images.unsplash.com/..."
-                        value={newProd.image}
-                        onChange={(e) => setNewProd({...newProd, image: e.target.value})}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 focus:ring-2 focus:ring-blue-500 outline-none transition-all font-mono text-xs text-slate-800"
-                      />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                      <div>
+                        <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest block mb-1.5">Core Product Showcase Image URL</label>
+                        <input 
+                          type="text"
+                          placeholder="https://images.unsplash.com/..."
+                          value={newProd.image}
+                          onChange={(e) => setNewProd({...newProd, image: e.target.value})}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 focus:ring-2 focus:ring-blue-500 outline-none transition-all font-mono text-xs text-slate-800"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest block mb-1.5">Optional PDF Brochure Download URL</label>
+                        <input 
+                          type="text"
+                          placeholder="e.g. /brochures/supply.pdf (or https://...)"
+                          value={newProd.brochureUrl}
+                          onChange={(e) => setNewProd({...newProd, brochureUrl: e.target.value})}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 focus:ring-2 focus:ring-blue-500 outline-none transition-all font-mono text-xs text-slate-800"
+                        />
+                      </div>
                     </div>
 
                     <div>
@@ -757,14 +890,28 @@ export default function Admin() {
                     </div>
 
                     <div>
-                      <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest block mb-1.5">Industry Applications Grid (Separate with commas)</label>
-                      <input 
-                        type="text"
-                        placeholder="Industrial Processes, Vacuum & Plasma, Research & Academia"
-                        value={newProd.applicationsInput}
-                        onChange={(e) => setNewProd({...newProd, applicationsInput: e.target.value})}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 focus:ring-2 focus:ring-blue-500 outline-none transition-all font-semibold text-xs text-slate-800"
-                      />
+                      <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest block mb-3">Linked Industry Applications</label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {APPLICATION_SECTIONS.map((appSec) => {
+                          const checked = newProd.applications.includes(appSec);
+                          return (
+                            <label key={appSec} className={`p-4 border rounded-xl flex items-center gap-3 cursor-pointer transition-all ${checked ? "bg-blue-50/50 border-blue-200 text-blue-950 font-bold" : "bg-slate-50 border-slate-150 text-slate-600 hover:bg-slate-100"}`}>
+                              <input 
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(e) => {
+                                  const nextApps = e.target.checked 
+                                    ? [...newProd.applications, appSec]
+                                    : newProd.applications.filter(a => a !== appSec);
+                                  setNewProd({...newProd, applications: nextApps});
+                                }}
+                                className="h-4.5 w-4.5 text-blue-600 border-slate-300 rounded focus:ring-blue-500"
+                              />
+                              <span className="text-[11px] leading-none">{appSec}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
                     </div>
 
                     <div className="flex justify-end pt-4">
@@ -957,6 +1104,127 @@ export default function Admin() {
                       </button>
                     </div>
                   </form>
+                </div>
+              </div>
+            )}
+
+            {/* MODELS & CATEGORIES MANAGEMENT */}
+            {activeTab === "models" && (
+              <div className="space-y-8">
+                {/* Model/Category Add Form */}
+                <div className="bg-white border border-slate-200 rounded-[2rem] p-8 lg:p-10 shadow-sm">
+                  <h2 className="text-2xl font-extrabold uppercase tracking-tight italic text-slate-900 mb-2">ADD OR UPDATE <span className="text-blue-600 font-serif normal-case not-italic">Product Category / Model</span></h2>
+                  <p className="text-slate-500 text-xs leading-relaxed mb-8 font-semibold">
+                    Dynamic categorization of high-voltage models such as modules, racks, CCPS, or customized units.
+                  </p>
+
+                  <form onSubmit={handleCreateModel} className="space-y-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                      <div>
+                        <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest block mb-1.5">Model ID Key (URL Slug)</label>
+                        <input 
+                          type="text"
+                          required
+                          placeholder="e.g. ccps, modules, racks"
+                          value={newModel.id}
+                          onChange={(e) => setNewModel({...newModel, id: e.target.value})}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 focus:ring-2 focus:ring-blue-500 outline-none transition-all font-mono text-xs font-semibold text-slate-800"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest block mb-1.5">Model/Category Display Name</label>
+                        <input 
+                          type="text"
+                          required
+                          placeholder="e.g. HV Capacitor Charging Power Supplies (CCPS)"
+                          value={newModel.name}
+                          onChange={(e) => setNewModel({...newModel, name: e.target.value})}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 focus:ring-2 focus:ring-blue-500 outline-none transition-all font-semibold text-xs text-slate-800"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest block mb-3">Link to Application Sections</label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {APPLICATION_SECTIONS.map((appSec) => {
+                          const checked = newModel.applications.includes(appSec);
+                          return (
+                            <label key={appSec} className={`p-4 border rounded-xl flex items-center gap-3 cursor-pointer transition-all ${checked ? "bg-blue-50/50 border-blue-200 text-blue-950 font-bold" : "bg-slate-50 border-slate-150 text-slate-600 hover:bg-slate-100"}`}>
+                              <input 
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(e) => {
+                                  const nextApps = e.target.checked 
+                                    ? [...newModel.applications, appSec]
+                                    : newModel.applications.filter(a => a !== appSec);
+                                  setNewModel({...newModel, applications: nextApps});
+                                }}
+                                className="h-4.5 w-4.5 text-blue-600 border-slate-300 rounded focus:ring-blue-500"
+                              />
+                              <span className="text-[11px] leading-none">{appSec}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end pt-4">
+                      <button 
+                        type="submit"
+                        disabled={loading}
+                        className="px-8 h-14 bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-xl uppercase tracking-widest text-[11px] transition-all cursor-pointer shadow-lg shadow-blue-500/10 flex items-center gap-2"
+                      >
+                        <Plus className="h-5 w-5" /> Save Category Model
+                      </button>
+                    </div>
+                  </form>
+                </div>
+
+                {/* Existing Models Index */}
+                <div className="bg-white border border-slate-200 rounded-[2rem] p-8 lg:p-10 shadow-sm">
+                  <h2 className="text-2xl font-extrabold uppercase tracking-tight italic text-slate-900 mb-6">DYNAMIC <span className="text-blue-600 font-serif normal-case not-italic">Category Models Index</span></h2>
+                  
+                  <div className="space-y-4">
+                    {models.map((model) => (
+                      <div key={model.id} className="p-6 border border-slate-100 bg-slate-50 rounded-2xl flex items-center justify-between gap-4 flex-wrap hover:border-slate-250 transition-colors">
+                        <div className="min-w-0 flex-1">
+                          <span className="bg-white px-2 py-0.5 rounded border border-slate-200 text-slate-400 text-[8px] font-bold uppercase tracking-widest font-mono">ID: {model.id}</span>
+                          <h4 className="font-extrabold text-slate-900 mt-1 uppercase italic text-sm">{model.name}</h4>
+                          {model.applications && model.applications.length > 0 ? (
+                            <div className="flex flex-wrap gap-1.5 mt-2">
+                              {model.applications.map(app => (
+                                <span key={app} className="bg-blue-50/50 text-blue-700 text-[9px] font-bold px-2 py-0.5 rounded border border-blue-100/50">
+                                  {app}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-[10px] text-slate-400 font-medium italic mt-2">No application sections linked.</p>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-4">
+                          <button 
+                            onClick={() => setNewModel({
+                              id: model.id,
+                              name: model.name,
+                              applications: model.applications || []
+                            })}
+                            className="px-4 py-2 bg-white text-slate-600 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer"
+                          >
+                            Edit
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteModel(model.id)}
+                            className="p-3 bg-white text-rose-600 hover:bg-rose-50 border border-slate-200 rounded-xl hover:border-rose-100 transition-all cursor-pointer"
+                          >
+                            <Trash2 className="h-4.5 w-4.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             )}

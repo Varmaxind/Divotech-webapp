@@ -99,6 +99,29 @@ app.delete("/api/admin/products/:id", (req, res) => {
   }
 });
 
+// Models Endpoints
+app.get("/api/models", (req, res) => {
+  res.json(db.getModels());
+});
+
+app.post("/api/admin/models", (req, res) => {
+  const model = req.body;
+  if (!model.id || !model.name) {
+    return res.status(400).json({ error: "Missing required fields (id, name)" });
+  }
+  const saved = db.saveModel(model);
+  res.json({ success: true, model: saved });
+});
+
+app.delete("/api/admin/models/:id", (req, res) => {
+  const success = db.deleteModel(req.params.id);
+  if (success) {
+    res.json({ success: true, message: "Model deleted successfully" });
+  } else {
+    res.status(404).json({ error: "Model not found" });
+  }
+});
+
 // Admin: CMS Meta Edit
 app.post("/api/admin/cms", (req, res) => {
   const cmsData = req.body;

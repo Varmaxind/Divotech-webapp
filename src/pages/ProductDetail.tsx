@@ -17,6 +17,7 @@ interface Product {
   description: string;
   features: string[];
   specs?: Record<string, string>;
+  brochureUrl?: string;
 }
 
 export default function ProductDetail() {
@@ -168,6 +169,17 @@ export default function ProductDetail() {
                   <Shield className="h-4 w-4 text-emerald-600" /> One Year Standard Warranty
                 </div>
               </div>
+
+              {product.brochureUrl && (
+                <a 
+                  href={product.brochureUrl} 
+                  target="_blank" 
+                  rel="noreferrer" 
+                  className="mb-6 h-12 border border-blue-200 hover:bg-blue-50 bg-blue-50/20 text-blue-750 transition-all rounded-xl font-bold uppercase tracking-widest text-[10px] flex items-center justify-center gap-2 w-full shadow-sm"
+                >
+                  <Download className="h-4 w-4 text-blue-700" /> Download PDF Brochure
+                </a>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <button 

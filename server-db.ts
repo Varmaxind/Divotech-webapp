@@ -19,6 +19,13 @@ export interface Product {
   features: string[];
   specs: Record<string, string>;
   applications: string[];
+  brochureUrl?: string;
+}
+
+export interface Model {
+  id: string;
+  name: string;
+  applications?: string[];
 }
 
 export interface Inquiry {
@@ -283,6 +290,44 @@ export const db = {
     data.products = data.products.filter((p: any) => p.id !== id);
     saveDB(data);
     return data.products.length < initialLen;
+  },
+  getModels: (): Model[] => {
+    const dbData = getDB();
+    if (!dbData.models) {
+      dbData.models = [
+        { id: "regulated-dc", name: "High Voltage Regulated DC Power Supplies", applications: ["Industrial Processes", "Vacuum & Plasma", "Analytical Instrumentation", "Inspection & Test Equipment", "Semiconductor Fabrication", "Research & Academia"] },
+        { id: "pulsed-hvps", name: "Pulsed High Voltage Power Supplies (Pulsed HVPS)", applications: ["Vacuum & Plasma", "Semiconductor Fabrication", "Research & Academia"] },
+        { id: "ccps", name: "HV Capacitor Charging Power Supplies (CCPS)", applications: ["Research & Academia", "Industrial Processes", "Inspection & Test Equipment"] },
+        { id: "sinewave-generators", name: "High Voltage Sinewave Generators", applications: ["Research & Academia", "Vacuum & Plasma"] },
+        { id: "x-ray-supplies", name: "X-Ray Power Supplies", applications: ["Analytical Instrumentation", "Inspection & Test Equipment"] },
+        { id: "hcps", name: "High Current Power Supplies (HCPS)", applications: ["Industrial Processes", "Research & Academia"] },
+        { id: "custom-special", name: "Customised / Special Power Supply Products", applications: ["Industrial Processes", "Vacuum & Plasma", "Research & Academia", "Semiconductor Fabrication", "Inspection & Test Equipment"] }
+      ];
+      saveDB(dbData);
+    }
+    return dbData.models;
+  },
+  saveModel: (model: Model): Model => {
+    const data = getDB();
+    if (!data.models) {
+      data.models = [];
+    }
+    const index = data.models.findIndex((m: any) => m.id === model.id);
+    if (index >= 0) {
+      data.models[index] = model;
+    } else {
+      data.models.push(model);
+    }
+    saveDB(data);
+    return model;
+  },
+  deleteModel: (id: string): boolean => {
+    const data = getDB();
+    if (!data.models) return false;
+    const initialLen = data.models.length;
+    data.models = data.models.filter((m: any) => m.id !== id);
+    saveDB(data);
+    return data.models.length < initialLen;
   },
   getInquiries: (): Inquiry[] => {
     return getDB().inquiries || [];

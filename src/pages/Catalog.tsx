@@ -13,21 +13,33 @@ interface Product {
   image: string;
   description: string;
   specs?: Record<string, string>;
+  brochureUrl?: string;
+}
+
+interface Model {
+  id: string;
+  name: string;
+  applications?: string[];
 }
 
 export default function Catalog() {
   const [products, setProducts] = useState<Product[]>([]);
+  const [models, setModels] = useState<Model[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [inputFilter, setInputFilter] = useState("all");
 
   useEffect(() => {
-    fetch("/api/products")
-      .then(res => res.json())
-      .then(data => {
-        setProducts(data);
-        setLoading(false);
-      });
+    Promise.all([
+      fetch("/api/products").then(res => res.json()),
+      fetch("/api/models").then(res => res.json())
+    ]).then(([productsData, modelsData]) => {
+      setProducts(productsData);
+      setModels(modelsData);
+      setLoading(false);
+    }).catch(() => {
+      setLoading(false);
+    });
   }, []);
 
   const filtered = products.filter(p => {
@@ -114,75 +126,135 @@ export default function Catalog() {
           </div>
         </div>
 
-        {loading ? (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {[1, 2, 3].map(i => (
-              <div key={i} className="bg-white border border-slate-200 rounded-2xl h-[450px] animate-pulse" />
-            ))}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {filtered.map((product, i) => (
-              <motion.div
-                key={product.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.1 }}
-                className="bg-white border border-slate-100 rounded-2xl flex flex-col group cursor-pointer shadow-sm hover:border-blue-200 ring-1 ring-transparent hover:ring-blue-100 transition-all"
-              >
-                <div className="aspect-square bg-slate-50 rounded-xl m-4 flex items-center justify-center overflow-hidden relative">
-                  <img 
-                    src={product.image} 
-                    alt={product.name} 
-                    className="w-full h-full object-cover grayscale brightness-110 group-hover:scale-105 transition-transform duration-500"
-                    referrerPolicy="no-referrer"
-                  />
-                  <div className="absolute top-3 left-3 max-w-[85%]">
-                    <span className="bg-white/90 backdrop-blur-md text-slate-900 text-[8px] font-extrabold px-2 py-1 rounded shadow-sm border border-slate-100 uppercase tracking-wider block truncate">
-                      {product.category}
-                    </span>
-                  </div>
-                </div>
-                
-                <div className="px-5 pb-5 flex flex-col flex-grow">
-                  <h3 className="font-bold text-slate-900 group-hover:text-blue-700 transition-colors uppercase italic tracking-tight">{product.name}</h3>
-                  <p className="text-[11px] text-slate-400 mt-1 mb-3 line-clamp-1 font-semibold uppercase tracking-wider">{product.voltage} Module | Precision Power</p>
-                  
-                  {product.specs?.["Input Voltage"] && (
-                    <div className="mb-4 bg-blue-50/50 border border-blue-100 px-3 py-1.5 rounded-lg flex items-center gap-2">
-                      <Zap className="h-3 w-3 text-blue-600 fill-blue-100 shrink-0" />
-                      <span className="text-[9px] text-blue-700 font-extrabold uppercase tracking-wide truncate">
-                        Input: {product.specs["Input Voltage"]}
-                      </span>
-                    </div>
-                  )}
 
-                  <div className="mt-auto flex items-center justify-between border-t border-slate-50 pt-4">
-                    <div className="flex flex-col">
-                      <span className="text-[8px] font-extrabold text-slate-400 uppercase tracking-widest">Pricing</span>
-                      <span className="text-base font-extrabold text-slate-900">
-                        {product.price > 0 ? `₹${product.price.toLocaleString("en-IN")}` : "Custom Quote"}
+        {(() => {
+          // Group products by category/model
+          const groupedProducts = models.reduce((acc, model) => {
+            const modelProducts = filtered.filter(p => 
+              p.category.toLowerCase() === model.name.toLowerCase() || 
+              p.category.toLowerCase() === model.id.toLowerCase()
+            );
+            if (modelProducts.length > 0) {
+              acc.push({
+                id: model.id,
+                name: model.name,
+                products: modelProducts
+              });
+            }
+            return acc;
+          }, [] as Array<{ id: string; name: string; products: Product[] }>);
+
+          // Catch any filtered products whose category didn't match any of the models
+          const matchedProductIds = new Set(groupedProducts.flatMap(g => g.products.map(p => p.id)));
+          const unmatchedProducts = filtered.filter(p => !matchedProductIds.has(p.id));
+
+          if (unmatchedProducts.length > 0) {
+            // Group unmatched products by their category field
+            const extraGroups: Record<string, Product[]> = {};
+            unmatchedProducts.forEach(p => {
+              const cat = p.category || "Other Power Products";
+              if (!extraGroups[cat]) extraGroups[cat] = [];
+              extraGroups[cat].push(p);
+            });
+            Object.entries(extraGroups).forEach(([catName, prods]) => {
+              groupedProducts.push({
+                id: catName.toLowerCase().replace(/\s+/g, "-"),
+                name: catName,
+                products: prods
+              });
+            });
+          }
+
+          if (loading) {
+            return (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                {[1, 2, 3].map(i => (
+                  <div key={i} className="bg-white border border-slate-200 rounded-2xl h-[450px] animate-pulse" />
+                ))}
+              </div>
+            );
+          }
+
+          if (groupedProducts.length > 0) {
+            return (
+              <div className="space-y-16">
+                {groupedProducts.map((group, groupIdx) => (
+                  <div key={group.id} className="space-y-6">
+                    <div className="flex items-center gap-4 border-b border-slate-200 pb-4">
+                      <div className="h-2.5 w-2.5 bg-blue-600 rounded-full" />
+                      <h2 className="text-xl font-extrabold text-slate-900 uppercase italic tracking-tight">{group.name}</h2>
+                      <span className="ml-auto bg-slate-100 text-slate-500 font-mono text-[10px] font-bold px-2.5 py-1 rounded-full border border-slate-200 uppercase">
+                        {group.products.length} {group.products.length === 1 ? "System" : "Systems"}
                       </span>
                     </div>
-                    <Link 
-                      to={`/product/${product.id}`}
-                      className="p-2.5 bg-slate-100 text-slate-500 rounded-xl hover:bg-blue-600 hover:text-white transition-all shadow-sm"
-                    >
-                      <ArrowRight className="h-4 w-4" />
-                    </Link>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                      {group.products.map((product, i) => (
+                        <motion.div
+                          key={product.id}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: i * 0.05 }}
+                          className="bg-white border border-slate-100 rounded-2xl flex flex-col group cursor-pointer shadow-sm hover:border-blue-200 ring-1 ring-transparent hover:ring-blue-100 transition-all"
+                        >
+                          <div className="aspect-square bg-slate-50 rounded-xl m-4 flex items-center justify-center overflow-hidden relative">
+                            <img 
+                              src={product.image} 
+                              alt={product.name} 
+                              className="w-full h-full object-cover grayscale brightness-110 group-hover:scale-105 transition-transform duration-500"
+                              referrerPolicy="no-referrer"
+                            />
+                            <div className="absolute top-3 left-3 max-w-[85%]">
+                              <span className="bg-white/90 backdrop-blur-md text-slate-900 text-[8px] font-extrabold px-2 py-1 rounded shadow-sm border border-slate-100 uppercase tracking-wider block truncate">
+                                {product.category}
+                              </span>
+                            </div>
+                          </div>
+                          
+                          <div className="px-5 pb-5 flex flex-col flex-grow">
+                            <h3 className="font-bold text-slate-900 group-hover:text-blue-700 transition-colors uppercase italic tracking-tight">{product.name}</h3>
+                            <p className="text-[11px] text-slate-400 mt-1 mb-3 line-clamp-1 font-semibold uppercase tracking-wider">{product.voltage} Module | Precision Power</p>
+                            
+                            {product.specs?.["Input Voltage"] && (
+                              <div className="mb-4 bg-blue-50/50 border border-blue-100 px-3 py-1.5 rounded-lg flex items-center gap-2">
+                                <Zap className="h-3 w-3 text-blue-600 fill-blue-100 shrink-0" />
+                                <span className="text-[9px] text-blue-700 font-extrabold uppercase tracking-wide truncate">
+                                  Input: {product.specs["Input Voltage"]}
+                                </span>
+                              </div>
+                            )}
+
+                            <div className="mt-auto flex items-center justify-between border-t border-slate-50 pt-4">
+                              <div className="flex flex-col">
+                                <span className="text-[8px] font-extrabold text-slate-400 uppercase tracking-widest">Pricing</span>
+                                <span className="text-base font-extrabold text-slate-900">
+                                  {product.price > 0 ? `₹${product.price.toLocaleString("en-IN")}` : "Custom Quote"}
+                                </span>
+                              </div>
+                              <Link 
+                                to={`/product/${product.id}`}
+                                className="p-2.5 bg-slate-100 text-slate-500 rounded-xl hover:bg-blue-600 hover:text-white transition-all shadow-sm"
+                              >
+                                <ArrowRight className="h-4 w-4" />
+                              </Link>
+                            </div>
+                          </div>
+                        </motion.div>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        )}
-        
-        {!loading && filtered.length === 0 && (
-          <div className="text-center py-20 bg-white border border-slate-200 rounded-3xl">
-            <Search className="h-12 w-12 text-slate-200 mx-auto mb-4" />
-            <p className="text-slate-500 font-medium">No components found matching your technical search.</p>
-          </div>
-        )}
+                ))}
+              </div>
+            );
+          }
+
+          return (
+            <div className="text-center py-20 bg-white border border-slate-200 rounded-3xl">
+              <Search className="h-12 w-12 text-slate-200 mx-auto mb-4" />
+              <p className="text-slate-500 font-medium">No components found matching your technical search.</p>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
