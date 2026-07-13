@@ -6,6 +6,7 @@ import {
   MapPin, Phone, Mail, Sliders, Image, Tag, Inbox
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+import { formatProductPrice } from "../utils";
 
 interface Product {
   id: string;
@@ -22,6 +23,9 @@ interface Product {
   specs: Record<string, string>;
   applications: string[];
   brochureUrl?: string;
+  priceType?: "standard" | "range" | "contact";
+  priceRangeMin?: number;
+  priceRangeMax?: number;
 }
 
 interface Model {
@@ -39,6 +43,26 @@ interface Inquiry {
   message: string;
   industry: string;
   voltageRange?: string;
+  createdAt: string;
+}
+
+interface ApplicationSection {
+  id: string;
+  title: string;
+  iconName: string;
+  desc: string;
+  bullets: string[];
+  keywords: string;
+  pinned?: boolean;
+}
+
+interface PendingChange {
+  id: string;
+  type: string;
+  action: string;
+  targetId: string;
+  data: any;
+  createdBy: string;
   createdAt: string;
 }
 
@@ -67,21 +91,39 @@ const APPLICATION_SECTIONS = [
 ];
 
 export default function Admin() {
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [token, setToken] = useState<string | null>(localStorage.getItem("admin_token"));
   const [loginError, setLoginError] = useState("");
-  const [activeTab, setActiveTab] = useState<"inquiries" | "products" | "cms" | "models">("inquiries");
+  const [activeTab, setActiveTab] = useState<"inquiries" | "products" | "cms" | "models" | "applications" | "verification">("inquiries");
   
   // Data State
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [models, setModels] = useState<Model[]>([]);
+  const [applications, setApplications] = useState<ApplicationSection[]>([]);
+  const [pendingChanges, setPendingChanges] = useState<PendingChange[]>([]);
   const [cms, setCms] = useState<CMSData | null>(null);
   
+  // Verification dialog states
+  const [verifierEmailInput, setVerifierEmailInput] = useState("");
+  const [verificationError, setVerificationError] = useState("");
+
   // UI Loading / Feedback State
   const [loading, setLoading] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [selectedInquiry, setSelectedInquiry] = useState<Inquiry | null>(null);
+
+  // New Application Form State
+  const [newApp, setNewApp] = useState({
+    id: "",
+    title: "",
+    iconName: "Zap",
+    desc: "",
+    bulletsInput: "",
+    keywords: "",
+    pinned: false
+  });
 
   // New Model Form State
   const [newModel, setNewModel] = useState({
@@ -101,6 +143,9 @@ export default function Admin() {
     power: "",
     description: "",
     price: 0,
+    priceType: "standard" as "standard" | "range" | "contact",
+    priceRangeMin: 0,
+    priceRangeMax: 0,
     image: "https://images.unsplash.com/photo-1581092160562-40aa08e78837?auto=format&fit=crop&q=80&w=800",
     featuresInput: "",
     specsInput: "Input Voltage: 220V AC\nLoad Regulation: < 0.01%\nPolarity: Positive/Negative",
@@ -113,9 +158,11 @@ export default function Admin() {
     if (!token) return;
     setLoading(true);
     try {
-      const [productsRes, inquiriesRes, cmsRes, modelsRes] = await Promise.all([
+      const [productsRes, inquiriesRes, cmsRes, modelsRes, appsRes, pendingRes] = await Promise.all([
         fetch("/api/products").then(r => r.json()),
-        fetch("/api/admin/inquiries").then(r => {
+        fetch("/api/admin/inquiries", {
+          headers: { "X-Admin-Email": token ? token.split("|")[0] : "" }
+        }).then(r => {
           if (r.status === 401) {
             localStorage.removeItem("admin_token");
             setToken(null);
@@ -124,13 +171,17 @@ export default function Admin() {
           return r.json();
         }),
         fetch("/api/cms").then(r => r.json()),
-        fetch("/api/models").then(r => r.json())
+        fetch("/api/models").then(r => r.json()),
+        fetch("/api/applications").then(r => r.json()),
+        fetch("/api/admin/pending-changes").then(r => r.json())
       ]);
 
       setProducts(productsRes);
       setInquiries(inquiriesRes);
       setCms(cmsRes);
       setModels(modelsRes);
+      setApplications(appsRes);
+      setPendingChanges(pendingRes);
 
       // Pre-select first category and its applications if category is currently empty
       if (modelsRes && modelsRes.length > 0) {
@@ -161,11 +212,15 @@ export default function Admin() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError("");
+    if (!email || !email.toLowerCase().trim().endsWith("@divotech.in")) {
+      setLoginError("Only @divotech.in email addresses are permitted for administrative access.");
+      return;
+    }
     try {
       const res = await fetch("/api/admin/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password })
+        body: JSON.stringify({ email: email.toLowerCase().trim(), password })
       });
 
       if (res.ok) {
@@ -226,14 +281,20 @@ export default function Admin() {
       features,
       specs,
       applications: newProd.applications,
-      brochureUrl: newProd.brochureUrl ? newProd.brochureUrl.trim() : undefined
+      brochureUrl: newProd.brochureUrl ? newProd.brochureUrl.trim() : undefined,
+      priceType: newProd.priceType,
+      priceRangeMin: Number(newProd.priceRangeMin) || 0,
+      priceRangeMax: Number(newProd.priceRangeMax) || 0
     };
 
     setLoading(true);
     try {
       const res = await fetch("/api/admin/products", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "X-Admin-Email": token ? token.split("|")[0] : ""
+        },
         body: JSON.stringify(payload)
       });
 
@@ -249,6 +310,9 @@ export default function Admin() {
           power: "",
           description: "",
           price: 0,
+          priceType: "standard" as "standard" | "range" | "contact",
+          priceRangeMin: 0,
+          priceRangeMax: 0,
           image: "https://images.unsplash.com/photo-1581092160562-40aa08e78837?auto=format&fit=crop&q=80&w=800",
           featuresInput: "",
           specsInput: "Input Voltage: 220V AC\nLoad Regulation: < 0.01%\nPolarity: Positive/Negative",
@@ -283,7 +347,10 @@ export default function Admin() {
     try {
       const res = await fetch("/api/admin/models", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "X-Admin-Email": token ? token.split("|")[0] : ""
+        },
         body: JSON.stringify(payload)
       });
       if (res.ok) {
@@ -313,7 +380,10 @@ export default function Admin() {
     }
     setLoading(true);
     try {
-      const res = await fetch(`/api/admin/models/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/admin/models/${id}`, { 
+        method: "DELETE",
+        headers: { "X-Admin-Email": token ? token.split("|")[0] : "" }
+      });
       if (res.ok) {
         setSaveStatus("Category model deleted successfully!");
         loadAdminData();
@@ -334,7 +404,8 @@ export default function Admin() {
     setLoading(true);
     try {
       const res = await fetch(`/api/admin/products/${id}`, {
-        method: "DELETE"
+        method: "DELETE",
+        headers: { "X-Admin-Email": token ? token.split("|")[0] : "" }
       });
       if (res.ok) {
         setSaveStatus("Deleted product " + id);
@@ -358,7 +429,10 @@ export default function Admin() {
     try {
       const res = await fetch("/api/admin/cms", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "X-Admin-Email": token ? token.split("|")[0] : ""
+        },
         body: JSON.stringify(cms)
       });
       if (res.ok) {
@@ -370,6 +444,168 @@ export default function Admin() {
       }
     } catch {
       alert("Error syncing corporate CMS config file.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Save or Update Application Section
+  const handleSaveAppSection = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newApp.id || !newApp.title) {
+      alert("ID and Title are required parameters.");
+      return;
+    }
+    const payload = {
+      id: newApp.id.trim().toLowerCase().replace(/\s+/g, "-"),
+      title: newApp.title.trim(),
+      iconName: newApp.iconName,
+      desc: newApp.desc.trim(),
+      bullets: newApp.bulletsInput.split("\n").map(b => b.trim()).filter(b => b.length > 0),
+      keywords: newApp.keywords.trim(),
+      pinned: newApp.pinned
+    };
+    setLoading(true);
+    try {
+      const res = await fetch("/api/admin/applications", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Admin-Email": token ? token.split("|")[0] : ""
+        },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        setSaveStatus("Industry Application Section Change registered in the validation queue!");
+        setNewApp({
+          id: "",
+          title: "",
+          iconName: "Zap",
+          desc: "",
+          bulletsInput: "",
+          keywords: "",
+          pinned: false
+        });
+        loadAdminData();
+        setTimeout(() => setSaveStatus(null), 3000);
+      } else {
+        alert("Failed to submit application section settings.");
+      }
+    } catch {
+      alert("Error saving industry application section.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Toggle application section pinned status
+  const handleTogglePinApp = async (appSection: any) => {
+    const payload = {
+      ...appSection,
+      pinned: !appSection.pinned
+    };
+    setLoading(true);
+    try {
+      const res = await fetch("/api/admin/applications", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Admin-Email": token ? token.split("|")[0] : ""
+        },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        setSaveStatus("Industry Application pin/unpin toggled & registered in verification queue!");
+        loadAdminData();
+        setTimeout(() => setSaveStatus(null), 3000);
+      }
+    } catch {
+      alert("Error toggling application section pin status.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Delete Application Section
+  const handleDeleteAppSection = async (id: string) => {
+    if (!confirm(`Are you sure you want to request deletion of application section "${id}"? This requires double-verification approval.`)) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/admin/applications/${id}`, {
+        method: "DELETE",
+        headers: { "X-Admin-Email": token ? token.split("|")[0] : "" }
+      });
+      if (res.ok) {
+        setSaveStatus("Deletion request submitted for compliance verification!");
+        loadAdminData();
+        setTimeout(() => setSaveStatus(null), 3000);
+      } else {
+        alert("Deletion request failed.");
+      }
+    } catch {
+      alert("Error submitting deletion request.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Verify / Approve Pending Change
+  const handleApproveChange = async (changeId: string) => {
+    setVerificationError("");
+    if (!verifierEmailInput || !verifierEmailInput.toLowerCase().trim().endsWith("@divotech.in")) {
+      setVerificationError("Double verification requires a valid @divotech.in corporate email address.");
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/admin/pending-changes/${changeId}/approve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ verifierEmail: verifierEmailInput.toLowerCase().trim() })
+      });
+      if (res.ok) {
+        setSaveStatus("Pending change APPROVED & deployed to live database!");
+        setVerifierEmailInput("");
+        loadAdminData();
+        setTimeout(() => setSaveStatus(null), 3000);
+      } else {
+        const err = await res.json();
+        setVerificationError(err.error || "Approval Failed");
+      }
+    } catch {
+      setVerificationError("Network error approving pending change.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Reject Pending Change
+  const handleRejectChange = async (changeId: string) => {
+    setVerificationError("");
+    if (!verifierEmailInput || !verifierEmailInput.toLowerCase().trim().endsWith("@divotech.in")) {
+      setVerificationError("Rejection audits require a valid @divotech.in corporate email address.");
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/admin/pending-changes/${changeId}/reject`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ verifierEmail: verifierEmailInput.toLowerCase().trim() })
+      });
+      if (res.ok) {
+        setSaveStatus("Pending change REJECTED and removed.");
+        setVerifierEmailInput("");
+        loadAdminData();
+        setTimeout(() => setSaveStatus(null), 3000);
+      } else {
+        const err = await res.json();
+        setVerificationError(err.error || "Rejection Failed");
+      }
+    } catch {
+      setVerificationError("Network error rejecting pending change.");
     } finally {
       setLoading(false);
     }
@@ -418,20 +654,31 @@ export default function Admin() {
             <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1.5">Divo Technologies B2B Portal</p>
           </div>
 
-          <form onSubmit={handleLogin} className="space-y-6">
+          <form onSubmit={handleLogin} className="space-y-5">
+            <div>
+              <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest block mb-1.5">Corporate Email Address</label>
+              <input 
+                type="email" 
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="representative@divotech.in"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3.5 px-4 focus:ring-2 focus:ring-blue-500 outline-none transition-all font-semibold text-xs text-slate-800"
+                required
+              />
+              <p className="text-[9px] text-slate-400 mt-1">Must be an authorized email ending in <strong className="text-slate-600">@divotech.in</strong></p>
+            </div>
+
             <div>
               <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest block mb-1.5">Administrator Passkey</label>
-              <div className="relative">
-                <input 
-                  type="password" 
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••••••••"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl py-4.5 pl-4 pr-10 focus:ring-2 focus:ring-blue-500 outline-none transition-all font-mono text-center text-lg text-slate-800"
-                  required
-                />
-              </div>
-              <p className="text-[10px] text-slate-400 mt-2 text-center">Use password <code className="bg-slate-100 px-1 py-0.5 rounded font-bold text-slate-600 font-mono">divotech2026</code> to log in</p>
+              <input 
+                type="password" 
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••••••••"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3.5 px-4 focus:ring-2 focus:ring-blue-500 outline-none transition-all font-mono text-center text-base text-slate-800"
+                required
+              />
+              <p className="text-[9px] text-slate-400 mt-1 text-center">Use password <code className="bg-slate-100 px-1 py-0.5 rounded font-bold text-slate-600 font-mono">divotech2026</code> for testing</p>
             </div>
 
             {loginError && (
@@ -566,6 +813,42 @@ export default function Admin() {
               <span className="bg-blue-600/15 text-blue-700 font-mono text-[10px] px-2 py-0.5 rounded font-black">
                 {models.length}
               </span>
+            </button>
+
+            <button 
+              onClick={() => setActiveTab("applications")}
+              className={`w-full text-left px-4 py-4.5 rounded-2xl text-xs font-extrabold uppercase tracking-widest flex items-center justify-between transition-all cursor-pointer ${
+                activeTab === "applications" 
+                ? "bg-slate-900 text-white shadow-md shadow-slate-900/10" 
+                : "bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-100"
+              }`}
+            >
+              <span className="flex items-center gap-3">
+                <MapPin className="h-5 w-5" /> Applications
+              </span>
+              <span className="bg-blue-600/15 text-blue-700 font-mono text-[10px] px-2 py-0.5 rounded font-black">
+                {applications.length}
+              </span>
+            </button>
+
+            <button 
+              onClick={() => setActiveTab("verification")}
+              className={`w-full text-left px-4 py-4.5 rounded-2xl text-xs font-extrabold uppercase tracking-widest flex items-center justify-between transition-all cursor-pointer ${
+                activeTab === "verification" 
+                ? "bg-amber-600 text-white shadow-md shadow-amber-600/10" 
+                : "bg-amber-50/50 hover:bg-amber-100/55 text-amber-800 border border-amber-200"
+              }`}
+            >
+              <span className="flex items-center gap-3">
+                <Check className="h-5 w-5" /> Pending Queue
+              </span>
+              {pendingChanges.length > 0 ? (
+                <span className="bg-amber-650 text-white font-mono text-[10px] px-2 py-0.5 rounded-full font-black animate-pulse">
+                  {pendingChanges.length}
+                </span>
+              ) : (
+                <span className="text-[10px] text-slate-400 font-black">0</span>
+              )}
             </button>
 
             <div className="pt-6 border-t border-slate-100 mt-6 text-center text-[10px] text-slate-400 uppercase font-black tracking-widest">
@@ -788,16 +1071,62 @@ export default function Admin() {
                         />
                       </div>
                       <div>
-                        <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest block mb-1.5">Active Pricing (INR) (Ex-GST)</label>
-                        <input 
-                          type="number"
-                          placeholder="Set to 0 for Custom OEM Quote mode"
-                          value={newProd.price}
-                          onChange={(e) => setNewProd({...newProd, price: Number(e.target.value)})}
+                        <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest block mb-1.5">Pricing Model</label>
+                        <select
+                          value={newProd.priceType}
+                          onChange={(e) => setNewProd({...newProd, priceType: e.target.value as any})}
                           className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 focus:ring-2 focus:ring-blue-500 outline-none transition-all font-semibold text-xs text-slate-800"
-                        />
+                        >
+                          <option value="standard">Standard Static Price</option>
+                          <option value="range">Dynamic Price Range</option>
+                          <option value="contact">Contact for Price</option>
+                        </select>
                       </div>
                     </div>
+
+                    {newProd.priceType === "standard" && (
+                      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 mb-6">
+                        <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest block mb-1.5">Standard Public Price (INR) (Ex-GST)</label>
+                        <input 
+                          type="number"
+                          placeholder="e.g. 125000"
+                          value={newProd.price}
+                          onChange={(e) => setNewProd({...newProd, price: Number(e.target.value)})}
+                          className="w-full bg-white border border-slate-200 rounded-xl py-3 px-4 focus:ring-2 focus:ring-blue-500 outline-none transition-all font-semibold text-xs text-slate-800"
+                        />
+                      </div>
+                    )}
+
+                    {newProd.priceType === "range" && (
+                      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 mb-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest block mb-1.5">Minimum Price (INR)</label>
+                          <input 
+                            type="number"
+                            placeholder="e.g. 150000"
+                            value={newProd.priceRangeMin}
+                            onChange={(e) => setNewProd({...newProd, priceRangeMin: Number(e.target.value)})}
+                            className="w-full bg-white border border-slate-200 rounded-xl py-3 px-4 focus:ring-2 focus:ring-blue-500 outline-none transition-all font-semibold text-xs text-slate-800"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest block mb-1.5">Maximum Price (INR)</label>
+                          <input 
+                            type="number"
+                            placeholder="e.g. 300000"
+                            value={newProd.priceRangeMax}
+                            onChange={(e) => setNewProd({...newProd, priceRangeMax: Number(e.target.value)})}
+                            className="w-full bg-white border border-slate-200 rounded-xl py-3 px-4 focus:ring-2 focus:ring-blue-500 outline-none transition-all font-semibold text-xs text-slate-800"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {newProd.priceType === "contact" && (
+                      <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5 mb-6 text-blue-800 text-xs font-semibold leading-relaxed">
+                        Notice: The system will automatically replace the price on the catalog and details page with a "Contact for Price" tag. Customers can submit specs requests to obtain tailored quotations.
+                      </div>
+                    )}
 
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
                       <div>
@@ -945,7 +1274,7 @@ export default function Admin() {
                         <div className="flex items-center gap-6">
                           <div className="text-right">
                             <div className="text-[8px] uppercase tracking-widest font-extrabold text-slate-400">Pricing Scale</div>
-                            <div className="text-sm font-extrabold text-slate-800">{prod.price > 0 ? `₹${prod.price.toLocaleString("en-IN")}` : "Custom Quote"}</div>
+                            <div className="text-sm font-extrabold text-slate-800">{formatProductPrice(prod)}</div>
                           </div>
                           
                           <button 
@@ -1225,6 +1554,286 @@ export default function Admin() {
                       </div>
                     ))}
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* APPLICATIONS MANAGEMENT */}
+            {activeTab === "applications" && (
+              <div className="space-y-8">
+                {/* Application Add Form */}
+                <div className="bg-white border border-slate-200 rounded-[2rem] p-8 lg:p-10 shadow-sm">
+                  <h2 className="text-2xl font-extrabold uppercase tracking-tight italic text-slate-900 mb-2">ADD OR UPDATE <span className="text-blue-600 font-serif normal-case not-italic">Industry Application Section</span></h2>
+                  <p className="text-slate-500 text-xs leading-relaxed mb-8 font-semibold">
+                    Define high voltage industries (e.g. Vacuum & Plasma, Semiconductor, Research). Changes will enter the verification queue.
+                  </p>
+
+                  <form onSubmit={handleSaveAppSection} className="space-y-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                      <div>
+                        <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest block mb-1.5">Application ID (Slug Key)</label>
+                        <input 
+                          type="text"
+                          required
+                          placeholder="e.g. industrial-processes"
+                          value={newApp.id}
+                          onChange={(e) => setNewApp({...newApp, id: e.target.value})}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 focus:ring-2 focus:ring-blue-500 outline-none transition-all font-mono text-xs font-semibold text-slate-800"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest block mb-1.5">Application Title Display Name</label>
+                        <input 
+                          type="text"
+                          required
+                          placeholder="e.g. Industrial Processes"
+                          value={newApp.title}
+                          onChange={(e) => setNewApp({...newApp, title: e.target.value})}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 focus:ring-2 focus:ring-blue-500 outline-none transition-all font-semibold text-xs text-slate-800"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                      <div>
+                        <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest block mb-1.5">Lucide Representation Icon</label>
+                        <select 
+                          value={newApp.iconName}
+                          onChange={(e) => setNewApp({...newApp, iconName: e.target.value})}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 focus:ring-2 focus:ring-blue-500 outline-none transition-all font-semibold text-xs text-slate-800"
+                        >
+                          <option value="Zap">Zap (Lightning Bolt)</option>
+                          <option value="Target">Target (Semiconductor Fabrications)</option>
+                          <option value="Search">Search (Analytical Instruments)</option>
+                          <option value="FlaskConical">FlaskConical (Research Laboratories)</option>
+                          <option value="Hammer">Hammer (Industrial Welders)</option>
+                          <option value="Shield">Shield (Insulation Testing)</option>
+                          <option value="Sliders">Sliders (Custom Engineering)</option>
+                          <option value="ArrowRight">ArrowRight (Forward Systems)</option>
+                          <option value="Layers">Layers (Integrated Matrices)</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest block mb-1.5">Search Keywords (Comma Separated)</label>
+                        <input 
+                          type="text"
+                          placeholder="industrial, welding power supply, e-beam welding"
+                          value={newApp.keywords}
+                          onChange={(e) => setNewApp({...newApp, keywords: e.target.value})}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 focus:ring-2 focus:ring-blue-500 outline-none transition-all font-semibold text-xs text-slate-800"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest block mb-1.5">Application Description Summary</label>
+                      <textarea 
+                        required
+                        rows={3}
+                        placeholder="Robust voltage sources designed for continuous operation in severe environment conditions..."
+                        value={newApp.desc}
+                        onChange={(e) => setNewApp({...newApp, desc: e.target.value})}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 focus:ring-2 focus:ring-blue-500 outline-none transition-all font-semibold text-xs text-slate-800"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest block mb-1.5">Sub-Sectors Covered (One Per Line)</label>
+                      <textarea 
+                        rows={4}
+                        placeholder="Electron Beam Welding&#10;E-Beam Coating&#10;Electrospinning"
+                        value={newApp.bulletsInput}
+                        onChange={(e) => setNewApp({...newApp, bulletsInput: e.target.value})}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 focus:ring-2 focus:ring-blue-500 outline-none transition-all font-mono text-xs text-slate-800"
+                      />
+                    </div>
+
+                    <div className="p-4 border border-dashed border-blue-150 rounded-2xl bg-blue-50/20 flex items-center justify-between">
+                      <div>
+                        <h4 className="text-xs font-extrabold text-slate-900 uppercase">Pin Application to Top</h4>
+                        <p className="text-[10px] text-slate-500 mt-0.5">Pinned applications pop up first in sequence on the live web portal.</p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          checked={newApp.pinned} 
+                          onChange={(e) => setNewApp({...newApp, pinned: e.target.checked})}
+                          className="sr-only peer" 
+                        />
+                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                      </label>
+                    </div>
+
+                    <div className="flex justify-end pt-4">
+                      <button 
+                        type="submit"
+                        disabled={loading}
+                        className="px-8 h-14 bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-xl uppercase tracking-widest text-[11px] transition-all cursor-pointer shadow-lg shadow-blue-500/10 flex items-center gap-2"
+                      >
+                        <Plus className="h-5 w-5" /> Submit Application Change
+                      </button>
+                    </div>
+                  </form>
+                </div>
+
+                {/* Existing Applications Index */}
+                <div className="bg-white border border-slate-200 rounded-[2rem] p-8 lg:p-10 shadow-sm">
+                  <h2 className="text-2xl font-extrabold uppercase tracking-tight italic text-slate-900 mb-6">DYNAMIC <span className="text-blue-600 font-serif normal-case not-italic">Applications Index</span></h2>
+                  
+                  <div className="space-y-4">
+                    {applications.map((app) => (
+                      <div key={app.id} className="p-6 border border-slate-100 bg-slate-50 rounded-2xl flex items-center justify-between gap-4 flex-wrap hover:border-slate-250 transition-colors">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="bg-white px-2 py-0.5 rounded border border-slate-200 text-slate-400 text-[8px] font-bold uppercase tracking-widest font-mono">ID: {app.id}</span>
+                            {app.pinned && (
+                              <span className="bg-amber-100 text-amber-800 border border-amber-200 px-2 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-widest">★ PINNED ON TOP</span>
+                            )}
+                          </div>
+                          <h4 className="font-extrabold text-slate-900 mt-1 uppercase italic text-sm">{app.title}</h4>
+                          <p className="text-xs text-slate-500 mt-1 font-medium">{app.desc}</p>
+                          {app.bullets && app.bullets.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mt-2">
+                              {app.bullets.map((b: string) => (
+                                <span key={b} className="bg-white text-slate-600 text-[9px] font-bold px-2 py-0.5 rounded border border-slate-150">
+                                  {b}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          <button 
+                            onClick={() => handleTogglePinApp(app)}
+                            className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer border ${app.pinned ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"}`}
+                          >
+                            {app.pinned ? "Unpin" : "Pin Top"}
+                          </button>
+                          <button 
+                            onClick={() => setNewApp({
+                              id: app.id,
+                              title: app.title,
+                              iconName: app.iconName || "Zap",
+                              desc: app.desc,
+                              bulletsInput: app.bullets ? app.bullets.join("\n") : "",
+                              keywords: app.keywords || "",
+                              pinned: !!app.pinned
+                            })}
+                            className="px-4 py-2 bg-white text-slate-600 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer"
+                          >
+                            Edit
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteAppSection(app.id)}
+                            className="p-3 bg-white text-rose-600 hover:bg-rose-50 border border-slate-200 rounded-xl hover:border-rose-100 transition-all cursor-pointer"
+                          >
+                            <Trash2 className="h-4.5 w-4.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* VERIFICATION QUEUE (MAKER-CHECKER) */}
+            {activeTab === "verification" && (
+              <div className="space-y-8 animate-fade-in">
+                <div className="bg-white border-2 border-amber-500/20 rounded-[2rem] p-8 lg:p-10 shadow-sm relative overflow-hidden">
+                  <div className="absolute top-0 left-0 w-full h-1 bg-amber-500" />
+                  
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center border border-amber-100">
+                      <Lock className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-black uppercase tracking-tight italic text-slate-900">Double Verification <span className="text-amber-600">Pending Approvals</span></h2>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Maker-Checker Compliance Workflow (Section 4.1)</p>
+                    </div>
+                  </div>
+
+                  <p className="text-slate-500 text-xs leading-relaxed mb-8 font-semibold">
+                    To comply with security and change audit controls, any configuration update (products, categories, applications) must be verified by a secondary administrator with an authorized <code className="bg-slate-100 px-1 text-slate-700 font-mono">@divotech.in</code> domain. The submitting editor cannot verify their own changes.
+                  </p>
+
+                  <div className="bg-slate-50 rounded-2xl p-6 border border-slate-200 mb-8 max-w-xl">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">Verifier Identity Check (Enter Email To Approve/Reject)</label>
+                    <input 
+                      type="email"
+                      required
+                      placeholder="approver@divotech.in"
+                      value={verifierEmailInput}
+                      onChange={(e) => setVerifierEmailInput(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-xl py-3 px-4 focus:ring-2 focus:ring-amber-500 outline-none transition-all font-semibold font-mono text-xs text-slate-800"
+                    />
+                    <p className="text-[9px] text-amber-700 mt-1.5 font-bold">Must be a different @divotech.in account than the original creator.</p>
+                  </div>
+
+                  {verificationError && (
+                    <div className="bg-rose-50 border border-rose-200 text-rose-700 font-semibold text-xs p-4 rounded-xl flex items-center gap-2 mb-8">
+                      <AlertCircle className="h-4 w-4 shrink-0" />
+                      <span>{verificationError}</span>
+                    </div>
+                  )}
+
+                  {pendingChanges.length === 0 ? (
+                    <div className="border border-dashed border-slate-200 rounded-2xl p-16 text-center bg-slate-50/50">
+                      <Check className="h-10 h-10 text-emerald-500 mx-auto mb-3" />
+                      <p className="text-slate-700 text-sm font-bold">Verification queue is completely clear!</p>
+                      <p className="text-slate-400 text-xs mt-1">All live modifications have been fully verified and deployed.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      {pendingChanges.map((change) => (
+                        <div key={change.id} className="border border-slate-200 rounded-2xl bg-slate-50 overflow-hidden hover:border-slate-300 transition-colors">
+                          <div className="p-5 border-b border-slate-200 bg-white flex flex-wrap items-center justify-between gap-4">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className={`px-2.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest ${change.action === "DELETE" ? "bg-rose-100 text-rose-700 border border-rose-200" : "bg-blue-100 text-blue-700 border border-blue-200"}`}>
+                                  {change.action} Change Request
+                                </span>
+                                <span className="bg-slate-100 text-slate-500 text-[8px] font-bold px-2 py-0.5 rounded font-mono border border-slate-200">
+                                  {change.type}
+                                </span>
+                              </div>
+                              <h4 className="font-extrabold text-slate-800 mt-1.5 font-mono text-xs">Target Entity: <span className="text-slate-900 uppercase font-sans italic font-black">{change.targetId}</span></h4>
+                            </div>
+
+                            <div className="text-right text-[10px] text-slate-400 font-semibold font-mono">
+                              <div>Created By: <span className="text-blue-600 font-bold">{change.createdBy}</span></div>
+                              <div className="text-[9px] mt-0.5">{new Date(change.createdAt).toLocaleString("en-IN")}</div>
+                            </div>
+                          </div>
+
+                          <div className="p-5 space-y-4">
+                            <div>
+                              <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Inspected Metadata Payload</div>
+                              <pre className="p-4 bg-slate-900 text-amber-400 rounded-xl text-[10px] font-mono leading-relaxed overflow-x-auto max-h-48 border border-slate-800">
+                                {JSON.stringify(change.data, null, 2)}
+                              </pre>
+                            </div>
+
+                            <div className="flex justify-end gap-3 pt-2">
+                              <button 
+                                onClick={() => handleRejectChange(change.id)}
+                                className="px-5 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer"
+                              >
+                                Reject & Trash
+                              </button>
+                              <button 
+                                onClick={() => handleApproveChange(change.id)}
+                                className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white shadow-md shadow-amber-500/10 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5"
+                              >
+                                <Check className="h-4 w-4" /> Approve & Deploy
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             )}

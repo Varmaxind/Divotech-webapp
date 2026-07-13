@@ -1,8 +1,8 @@
 import { Helmet } from "react-helmet-async";
 import { motion } from "motion/react";
-import { Zap, Target, Search, FlaskConical, Hammer, Shield, Sliders, ArrowRight, Layers } from "lucide-react";
+import { Zap, Target, Search, FlaskConical, Hammer, Shield, Sliders, ArrowRight, Layers, HelpCircle } from "lucide-react";
 import { Link } from "react-router-dom";
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 
 interface Product {
   id: string;
@@ -14,64 +14,45 @@ interface Product {
   applications: string[];
 }
 
+interface ApplicationSection {
+  id: string;
+  title: string;
+  iconName: string;
+  desc: string;
+  bullets: string[];
+  keywords: string;
+  pinned?: boolean;
+}
+
+const IconMap: Record<string, React.ComponentType<any>> = {
+  Zap,
+  Target,
+  Search,
+  FlaskConical,
+  Hammer,
+  Shield,
+  Sliders,
+  ArrowRight,
+  Layers
+};
+
 export default function Applications() {
   const [products, setProducts] = useState<Product[]>([]);
+  const [sections, setSections] = useState<ApplicationSection[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/products")
-      .then(res => res.json())
-      .then(data => {
-        setProducts(data);
+    Promise.all([
+      fetch("/api/products").then(res => res.json()),
+      fetch("/api/applications").then(res => res.json())
+    ])
+      .then(([productsData, appsData]) => {
+        setProducts(productsData);
+        setSections(appsData);
         setLoading(false);
       })
       .catch(() => setLoading(false));
   }, []);
-
-  const sections = [
-    {
-      title: "Industrial Processes",
-      icon: Hammer,
-      desc: "Robust voltage sources for heavy duty B2B environments. Built to last with forced air grids.",
-      bullets: ["Electron Beam Welding", "E-Beam Coating", "Electrostatics", "Electrospinning", "Thickness Gauging"],
-      keywords: "industrial high voltage power supply, e-beam welding power supply"
-    },
-    {
-      title: "Vacuum & Plasma",
-      icon: Zap,
-      desc: "Precise energy delivery with robust arc quench and automatic switch crossover regulators.",
-      bullets: ["E-Beam Evaporation", "Ion Sources", "DC Magnetron Sputtering", "Glow Discharge"],
-      keywords: "plasma power supply, vacuum high voltage power supply"
-    },
-    {
-      title: "Analytical Instrumentation",
-      icon: Search,
-      desc: "Ultra-low-noise stable high potential generators optimized for inspection and scientific testing.",
-      bullets: ["Scanning Electron Microscopes (SEM)", "Mass Spectrometers", "X-Ray Fluorescence (XRF) Scan"],
-      keywords: "SEM high voltage power supply, analytical HVPS"
-    },
-    {
-      title: "Inspection & Test Equipment",
-      icon: Shield,
-      desc: "Repeatable safety grids and diagnostics for insulation breakdown and NDT laboratories.",
-      bullets: ["Non-Destructive Testing (NDT)", "Hi-Pot Testing", "Dielectric Breakdown", "Capacitor Testing"],
-      keywords: "hi-pot tester power supply, HV test equipment"
-    },
-    {
-      title: "Semiconductor Fabrication",
-      icon: Target,
-      desc: "Precision stability (under 100ppm error bounds) and low ripple for advanced wafer-level lithography.",
-      bullets: ["Ion Implantation", "Physical Vapor Deposition (PVD)", "Electron Beam Lithography"],
-      keywords: "semiconductor HV power supply, PVD power supply"
-    },
-    {
-      title: "Research & Academia",
-      icon: FlaskConical,
-      desc: "Bespoke, flexible laboratory configurations for high energy university accelerator designs.",
-      bullets: ["Particle Accelerators", "Free Electron Lasers", "Marx Generators", "Capacitor Chargers"],
-      keywords: "accelerator HVPS, research power supply"
-    }
-  ];
 
   // Helper to find matching products case-insensitively
   const getMatchingProducts = (sectionTitle: string) => {
@@ -82,6 +63,10 @@ export default function Applications() {
         app.toLowerCase().replace(/[^a-z]/g, "") === normalizedTitle
       );
     });
+  };
+
+  const getIcon = (iconName: string) => {
+    return IconMap[iconName] || HelpCircle;
   };
 
   return (
@@ -116,7 +101,10 @@ export default function Applications() {
               >
                 <div className="flex items-center gap-6 mb-8">
                   <div className="w-16 h-16 bg-slate-50 text-slate-400 group-hover:bg-blue-600 group-hover:text-white transition-all flex items-center justify-center rounded-2xl shrink-0">
-                    <section.icon className="h-7 w-7" />
+                    {(() => {
+                      const IconComp = getIcon(section.iconName);
+                      return <IconComp className="h-7 w-7" />;
+                    })()}
                   </div>
                   <div>
                     <h3 className="text-xl font-bold text-slate-900 group-hover:text-blue-600 transition-colors uppercase tracking-tight italic">{section.title}</h3>
@@ -171,7 +159,7 @@ export default function Applications() {
                 </div>
                 
                 <div className="flex items-center justify-between text-[9px] font-bold text-slate-300 uppercase tracking-widest mt-auto border-t border-slate-50 pt-6">
-                  <span className="hidden sm:inline">Index: {section.keywords.split(",")[0]}</span>
+                  <span className="hidden sm:inline">Index: {section.keywords?.split(",")[0] || section.id}</span>
                   <Link to="/contact" className="text-blue-600 font-black flex items-center gap-2 hover:translate-x-1 transition-transform group-hover:text-blue-700">
                     Get Application Quote &rarr;
                   </Link>

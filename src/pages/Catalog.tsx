@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { Helmet } from "react-helmet-async";
 import { Search, Filter, ArrowRight, Zap } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { motion } from "motion/react";
+import { formatProductPrice } from "../utils";
 
 interface Product {
   id: string;
@@ -14,6 +15,9 @@ interface Product {
   description: string;
   specs?: Record<string, string>;
   brochureUrl?: string;
+  priceType?: "standard" | "range" | "contact";
+  priceRangeMin?: number;
+  priceRangeMax?: number;
 }
 
 interface Model {
@@ -23,6 +27,7 @@ interface Model {
 }
 
 export default function Catalog() {
+  const navigate = useNavigate();
   const [products, setProducts] = useState<Product[]>([]);
   const [models, setModels] = useState<Model[]>([]);
   const [search, setSearch] = useState("");
@@ -195,7 +200,8 @@ export default function Catalog() {
                           initial={{ opacity: 0, y: 20 }}
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ delay: i * 0.05 }}
-                          className="bg-white border border-slate-100 rounded-2xl flex flex-col group cursor-pointer shadow-sm hover:border-blue-200 ring-1 ring-transparent hover:ring-blue-100 transition-all"
+                          onClick={() => navigate(`/product/${product.id}`)}
+                          className="bg-white border border-slate-100 rounded-2xl flex flex-col group cursor-pointer shadow-sm hover:border-blue-200 hover:shadow-md ring-1 ring-transparent hover:ring-blue-100 transition-all duration-300"
                         >
                           <div className="aspect-square bg-slate-50 rounded-xl m-4 flex items-center justify-center overflow-hidden relative">
                             <img 
@@ -228,7 +234,7 @@ export default function Catalog() {
                               <div className="flex flex-col">
                                 <span className="text-[8px] font-extrabold text-slate-400 uppercase tracking-widest">Pricing</span>
                                 <span className="text-base font-extrabold text-slate-900">
-                                  {product.price > 0 ? `₹${product.price.toLocaleString("en-IN")}` : "Custom Quote"}
+                                  {formatProductPrice(product)}
                                 </span>
                               </div>
                               <Link 

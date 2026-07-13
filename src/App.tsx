@@ -22,6 +22,9 @@ interface CartItem {
   price: number;
   quantity: number;
   image: string;
+  priceType?: "standard" | "range" | "contact";
+  priceRangeMin?: number;
+  priceRangeMax?: number;
 }
 
 interface CartContextType {

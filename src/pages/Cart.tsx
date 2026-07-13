@@ -3,9 +3,11 @@ import { Link } from "react-router-dom";
 import { Helmet } from "react-helmet-async";
 import { Trash2, ArrowRight, ShoppingBag, CreditCard, ShieldCheck } from "lucide-react";
 import { motion } from "motion/react";
+import { formatProductPrice } from "../utils";
 
 export default function Cart() {
   const { cart, removeFromCart, total, clearCart } = useCart();
+  const hasNonStandard = cart.some(item => item.priceType === "range" || item.priceType === "contact");
 
   return (
     <div className="bg-slate-50 min-h-screen py-16">
@@ -43,7 +45,18 @@ export default function Cart() {
                   <div className="flex-grow">
                     <h3 className="font-bold text-slate-900">{item.name}</h3>
                     <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-1">QTY: {item.quantity}</p>
-                    <p className="text-slate-900 font-bold mt-2">₹{(item.price * item.quantity).toLocaleString("en-IN")}</p>
+                    <div className="text-slate-900 font-bold mt-2">
+                      {item.priceType === "range" ? (
+                        <div>
+                          <span className="text-[10px] text-slate-400 uppercase tracking-widest block font-extrabold mb-0.5">Custom Price Range</span>
+                          <span>{formatProductPrice(item)}</span>
+                        </div>
+                      ) : item.priceType === "contact" ? (
+                        <span className="text-slate-500 italic text-xs font-semibold">Contact for Pricing</span>
+                      ) : (
+                        <span>₹{(item.price * item.quantity).toLocaleString("en-IN")}</span>
+                      )}
+                    </div>
                   </div>
                   <button 
                     onClick={() => removeFromCart(item.id)}
@@ -62,12 +75,12 @@ export default function Cart() {
               </button>
             </div>
 
-            <div className="lg:col-span-1">
+             <div className="lg:col-span-1">
               <div className="bg-slate-900 rounded-3xl p-8 text-white sticky top-32 shadow-xl border border-white/5">
                 <h3 className="font-bold mb-8 uppercase text-xs tracking-widest text-slate-400 border-b border-white/10 pb-4">Order Summary</h3>
                 <div className="space-y-4 mb-8">
                   <div className="flex justify-between text-sm">
-                    <span className="text-slate-400">Merchant Tools</span>
+                    <span className="text-slate-400">Standard Catalog Items</span>
                     <span>₹{total.toLocaleString("en-IN")}</span>
                   </div>
                   <div className="flex justify-between text-sm">
@@ -75,16 +88,23 @@ export default function Cart() {
                     <span className="text-green-400 uppercase font-bold text-[10px]">Quote Required</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-slate-400">GST (18%)</span>
+                    <span className="text-slate-400">GST (18% standard items)</span>
                     <span className="text-slate-200">₹{(total * 0.18).toLocaleString("en-IN")}</span>
                   </div>
                 </div>
                 
-                <div className="border-t border-white/10 pt-6 mb-10">
+                <div className="border-t border-white/10 pt-6 mb-8">
                   <div className="flex justify-between items-end">
-                    <span className="text-xs font-bold uppercase tracking-widest text-blue-400">Estimate Total</span>
+                    <span className="text-xs font-bold uppercase tracking-widest text-blue-400">
+                      {hasNonStandard ? "Partial Catalog Total" : "Estimate Total"}
+                    </span>
                     <span className="text-3xl font-bold tracking-tight">₹{(total * 1.18).toLocaleString("en-IN")}</span>
                   </div>
+                  {hasNonStandard && (
+                    <div className="mt-3 bg-blue-500/10 border border-blue-500/20 text-[10px] text-blue-300 rounded-lg p-2.5 leading-relaxed font-semibold">
+                      Note: This order contains customized items that require an engineer-reviewed pricing quote.
+                    </div>
+                  )}
                 </div>
 
                 <Link 

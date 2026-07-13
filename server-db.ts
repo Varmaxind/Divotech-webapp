@@ -20,12 +20,38 @@ export interface Product {
   specs: Record<string, string>;
   applications: string[];
   brochureUrl?: string;
+  priceType?: "standard" | "range" | "contact";
+  priceRangeMin?: number;
+  priceRangeMax?: number;
 }
 
 export interface Model {
   id: string;
   name: string;
   applications?: string[];
+}
+
+export interface ApplicationSection {
+  id: string;
+  title: string;
+  iconName: string;
+  desc: string;
+  bullets: string[];
+  keywords: string;
+  pinned?: boolean;
+}
+
+export interface PendingChange {
+  id: string;
+  type: "create_product" | "update_product" | "delete_product" | "create_model" | "update_model" | "delete_model" | "update_cms" | "create_app" | "update_app" | "delete_app";
+  targetId: string;
+  targetName: string;
+  payload: any;
+  submittedBy: string;
+  createdAt: string;
+  status: "pending" | "approved" | "rejected";
+  verifiedBy?: string;
+  verifiedAt?: string;
 }
 
 export interface Inquiry {
@@ -261,7 +287,106 @@ initDB();
 function getDB() {
   initDB();
   const content = fs.readFileSync(DB_FILE, "utf8");
-  return JSON.parse(content);
+  const data = JSON.parse(content);
+  let dirty = false;
+  if (!data.applications) {
+    data.applications = [
+      {
+        id: "industrial-processes",
+        title: "Industrial Processes",
+        iconName: "Hammer",
+        desc: "Robust voltage sources for heavy duty B2B environments. Built to last with forced air grids.",
+        bullets: ["Electron Beam Welding", "E-Beam Coating", "Electrostatics", "Electrospinning", "Thickness Gauging"],
+        keywords: "industrial high voltage power supply, e-beam welding power supply",
+        pinned: true
+      },
+      {
+        id: "vacuum-plasma",
+        title: "Vacuum & Plasma",
+        iconName: "Zap",
+        desc: "Precise energy delivery with robust arc quench and automatic switch crossover regulators.",
+        bullets: ["E-Beam Evaporation", "Ion Sources", "DC Magnetron Sputtering", "Glow Discharge"],
+        keywords: "plasma power supply, vacuum high voltage power supply",
+        pinned: true
+      },
+      {
+        id: "analytical-instrumentation",
+        title: "Analytical Instrumentation",
+        iconName: "Search",
+        desc: "Ultra-low-noise stable high potential generators optimized for inspection and scientific testing.",
+        bullets: ["Scanning Electron Microscopes (SEM)", "Mass Spectrometers", "X-Ray Fluorescence (XRF) Scan"],
+        keywords: "SEM high voltage power supply, analytical HVPS",
+        pinned: true
+      },
+      {
+        id: "inspection-test-equipment",
+        title: "Inspection & Test Equipment",
+        iconName: "Shield",
+        desc: "Repeatable safety grids and diagnostics for insulation breakdown and NDT laboratories.",
+        bullets: ["Non-Destructive Testing (NDT)", "Hi-Pot Testing", "Dielectric Breakdown", "Capacitor Testing"],
+        keywords: "hi-pot tester power supply, HV test equipment"
+      },
+      {
+        id: "semiconductor-fabrication",
+        title: "Semiconductor Fabrication",
+        iconName: "Target",
+        desc: "Precision stability (under 100ppm error bounds) and low ripple for advanced wafer-level lithography.",
+        bullets: ["Ion Implantation", "Physical Vapor Deposition (PVD)", "Electron Beam Lithography"],
+        keywords: "semiconductor HV power supply, PVD power supply"
+      },
+      {
+        id: "research-academia",
+        title: "Research & Academia",
+        iconName: "FlaskConical",
+        desc: "Bespoke, flexible laboratory configurations for high energy university accelerator designs.",
+        bullets: ["Particle Accelerators", "Free Electron Lasers", "Marx Generators", "Capacitor Chargers"],
+        keywords: "accelerator HVPS, research power supply"
+      }
+    ];
+    dirty = true;
+  }
+  if (!data.pendingChanges) {
+    data.pendingChanges = [];
+    dirty = true;
+  }
+  if (!data.models) {
+    data.models = [
+      { id: "regulated-dc", name: "High Voltage Regulated DC Power Supplies", applications: ["Industrial Processes", "Vacuum & Plasma", "Analytical Instrumentation", "Inspection & Test Equipment", "Semiconductor Fabrication", "Research & Academia"] },
+      { id: "pulsed-hvps", name: "Pulsed High Voltage Power Supplies (Pulsed HVPS)", applications: ["Vacuum & Plasma", "Semiconductor Fabrication", "Research & Academia"] },
+      { id: "ccps", name: "HV Capacitor Charging Power Supplies (CCPS)", applications: ["Research & Academia", "Industrial Processes", "Inspection & Test Equipment"] },
+      { id: "sinewave-generators", name: "High Voltage Sinewave Generators", applications: ["Research & Academia", "Vacuum & Plasma"] },
+      { id: "x-ray-supplies", name: "X-Ray Power Supplies", applications: ["Analytical Instrumentation", "Inspection & Test Equipment"] },
+      { id: "hcps", name: "High Current Power Supplies (HCPS)", applications: ["Industrial Processes", "Research & Academia"] },
+      { id: "custom-special", name: "Customised / Special Power Supply Products", applications: ["Industrial Processes", "Vacuum & Plasma", "Research & Academia", "Semiconductor Fabrication", "Inspection & Test Equipment"] }
+    ];
+    dirty = true;
+  }
+  // Migrate products to support priceType, priceRangeMin, priceRangeMax
+  let productsMigrated = false;
+  if (data.products && Array.isArray(data.products)) {
+    data.products.forEach((prod: any) => {
+      if (!prod.priceType) {
+        prod.priceType = prod.price > 0 ? "standard" : "contact";
+        productsMigrated = true;
+      }
+      if (prod.priceRangeMin === undefined) {
+        prod.priceRangeMin = 0;
+        productsMigrated = true;
+      }
+      if (prod.priceRangeMax === undefined) {
+        prod.priceRangeMax = 0;
+        productsMigrated = true;
+      }
+    });
+  }
+  if (productsMigrated) {
+    dirty = true;
+  }
+
+  if (dirty) {
+    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), "utf8");
+  }
+  return data;
 }
 
 function saveDB(data: any) {
@@ -292,20 +417,7 @@ export const db = {
     return data.products.length < initialLen;
   },
   getModels: (): Model[] => {
-    const dbData = getDB();
-    if (!dbData.models) {
-      dbData.models = [
-        { id: "regulated-dc", name: "High Voltage Regulated DC Power Supplies", applications: ["Industrial Processes", "Vacuum & Plasma", "Analytical Instrumentation", "Inspection & Test Equipment", "Semiconductor Fabrication", "Research & Academia"] },
-        { id: "pulsed-hvps", name: "Pulsed High Voltage Power Supplies (Pulsed HVPS)", applications: ["Vacuum & Plasma", "Semiconductor Fabrication", "Research & Academia"] },
-        { id: "ccps", name: "HV Capacitor Charging Power Supplies (CCPS)", applications: ["Research & Academia", "Industrial Processes", "Inspection & Test Equipment"] },
-        { id: "sinewave-generators", name: "High Voltage Sinewave Generators", applications: ["Research & Academia", "Vacuum & Plasma"] },
-        { id: "x-ray-supplies", name: "X-Ray Power Supplies", applications: ["Analytical Instrumentation", "Inspection & Test Equipment"] },
-        { id: "hcps", name: "High Current Power Supplies (HCPS)", applications: ["Industrial Processes", "Research & Academia"] },
-        { id: "custom-special", name: "Customised / Special Power Supply Products", applications: ["Industrial Processes", "Vacuum & Plasma", "Research & Academia", "Semiconductor Fabrication", "Inspection & Test Equipment"] }
-      ];
-      saveDB(dbData);
-    }
-    return dbData.models;
+    return getDB().models || [];
   },
   saveModel: (model: Model): Model => {
     const data = getDB();
@@ -328,6 +440,97 @@ export const db = {
     data.models = data.models.filter((m: any) => m.id !== id);
     saveDB(data);
     return data.models.length < initialLen;
+  },
+  getApplications: (): ApplicationSection[] => {
+    const apps = getDB().applications || [];
+    // Sort pinned applications to the top (pinned: true first)
+    return [...apps].sort((a, b) => {
+      const aPinned = a.pinned ? 1 : 0;
+      const bPinned = b.pinned ? 1 : 0;
+      return bPinned - aPinned; // Descending (1 comes before 0)
+    });
+  },
+  saveApplication: (app: ApplicationSection): ApplicationSection => {
+    const data = getDB();
+    if (!data.applications) {
+      data.applications = [];
+    }
+    const index = data.applications.findIndex((a: any) => a.id === app.id);
+    if (index >= 0) {
+      data.applications[index] = app;
+    } else {
+      data.applications.push(app);
+    }
+    saveDB(data);
+    return app;
+  },
+  deleteApplication: (id: string): boolean => {
+    const data = getDB();
+    if (!data.applications) return false;
+    const initialLen = data.applications.length;
+    data.applications = data.applications.filter((a: any) => a.id !== id);
+    saveDB(data);
+    return data.applications.length < initialLen;
+  },
+  getPendingChanges: (): PendingChange[] => {
+    return getDB().pendingChanges || [];
+  },
+  savePendingChange: (change: Omit<PendingChange, "id" | "createdAt" | "status">): PendingChange => {
+    const data = getDB();
+    if (!data.pendingChanges) {
+      data.pendingChanges = [];
+    }
+    const newChange: PendingChange = {
+      ...change,
+      id: "chg_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+      createdAt: new Date().toISOString(),
+      status: "pending"
+    };
+    data.pendingChanges.unshift(newChange);
+    saveDB(data);
+    return newChange;
+  },
+  updatePendingChangeStatus: (id: string, status: "approved" | "rejected", verifierEmail?: string): PendingChange | null => {
+    const data = getDB();
+    if (!data.pendingChanges) return null;
+    const index = data.pendingChanges.findIndex((c: any) => c.id === id);
+    if (index === -1) return null;
+    
+    const change = data.pendingChanges[index];
+    change.status = status;
+    change.verifiedBy = verifierEmail;
+    change.verifiedAt = new Date().toISOString();
+
+    if (status === "approved") {
+      // Execute the actual modification on approval!
+      const payload = change.payload;
+      if (change.type === "create_product" || change.type === "update_product") {
+        const pIndex = data.products.findIndex((p: any) => p.id === change.targetId);
+        if (pIndex >= 0) data.products[pIndex] = payload;
+        else data.products.push(payload);
+      } else if (change.type === "delete_product") {
+        data.products = data.products.filter((p: any) => p.id !== change.targetId);
+      } else if (change.type === "create_model" || change.type === "update_model") {
+        if (!data.models) data.models = [];
+        const mIndex = data.models.findIndex((m: any) => m.id === change.targetId);
+        if (mIndex >= 0) data.models[mIndex] = payload;
+        else data.models.push(payload);
+      } else if (change.type === "delete_model") {
+        if (data.models) data.models = data.models.filter((m: any) => m.id !== change.targetId);
+      } else if (change.type === "create_app" || change.type === "update_app") {
+        if (!data.applications) data.applications = [];
+        const aIndex = data.applications.findIndex((a: any) => a.id === change.targetId);
+        if (aIndex >= 0) data.applications[aIndex] = payload;
+        else data.applications.push(payload);
+      } else if (change.type === "delete_app") {
+        if (data.applications) data.applications = data.applications.filter((a: any) => a.id !== change.targetId);
+      } else if (change.type === "update_cms") {
+        data.cms = { ...data.cms, ...payload };
+      }
+    }
+    
+    saveDB(data);
+    return change;
   },
   getInquiries: (): Inquiry[] => {
     return getDB().inquiries || [];
