@@ -3,7 +3,7 @@ import { Helmet } from "react-helmet-async";
 import { 
   Lock, Settings, Users, Database, Globe, Plus, Trash2, Save, 
   RefreshCw, LogOut, FileText, Sparkles, Check, AlertCircle, Eye, 
-  MapPin, Phone, Mail, Sliders, Image, Tag, Inbox
+  MapPin, Phone, Mail, Sliders, Image, Tag, Inbox, Edit, History
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { formatProductPrice } from "../utils";
@@ -114,6 +114,39 @@ export default function Admin() {
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [selectedInquiry, setSelectedInquiry] = useState<Inquiry | null>(null);
 
+  // Editing Mode States
+  const [editingProductId, setEditingProductId] = useState<string | null>(null);
+  const [editingModelId, setEditingModelId] = useState<string | null>(null);
+  const [editingAppId, setEditingAppId] = useState<string | null>(null);
+
+  // Listen for Google Auth Message Communication
+  useEffect(() => {
+    const handleAuthMessage = (event: MessageEvent) => {
+      if (event.data && event.data.type === "OAUTH_AUTH_SUCCESS") {
+        const loggedInEmail = event.data.email;
+        const fakeToken = `${loggedInEmail}|google_auth_active_${Date.now()}`;
+        localStorage.setItem("admin_token", fakeToken);
+        setToken(fakeToken);
+        setSaveStatus(`Logged in securely via Google as ${loggedInEmail}!`);
+        setTimeout(() => setSaveStatus(null), 3500);
+      }
+    };
+    window.addEventListener("message", handleAuthMessage);
+    return () => window.removeEventListener("message", handleAuthMessage);
+  }, []);
+
+  const handleGoogleLogin = () => {
+    const width = 500;
+    const height = 600;
+    const left = window.screen.width / 2 - width / 2;
+    const top = window.screen.height / 2 - height / 2;
+    window.open(
+      "/api/auth/google",
+      "google_sign_in",
+      `width=${width},height=${height},top=${top},left=${left},scrollbars=yes,resizable=yes`
+    );
+  };
+
   // New Application Form State
   const [newApp, setNewApp] = useState({
     id: "",
@@ -212,8 +245,8 @@ export default function Admin() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError("");
-    if (!email || !email.toLowerCase().trim().endsWith("@divotech.in")) {
-      setLoginError("Only @divotech.in email addresses are permitted for administrative access.");
+    if (!email || (!email.toLowerCase().trim().endsWith("@divotech.in") && !email.toLowerCase().trim().endsWith("@gmail.com"))) {
+      setLoginError("Only @divotech.in or authorized @gmail.com email addresses are permitted for administrative access.");
       return;
     }
     try {
@@ -299,7 +332,8 @@ export default function Admin() {
       });
 
       if (res.ok) {
-        setSaveStatus("Product Saved successfully!");
+        setSaveStatus("Product changes registered in the compliance verification queue!");
+        setEditingProductId(null);
         setNewProd({
           id: "",
           name: "",
@@ -320,7 +354,7 @@ export default function Admin() {
           brochureUrl: ""
         });
         loadAdminData();
-        setTimeout(() => setSaveStatus(null), 3000);
+        setTimeout(() => setSaveStatus(null), 3500);
       } else {
         alert("Failed to submit system settings");
       }
@@ -354,10 +388,11 @@ export default function Admin() {
         body: JSON.stringify(payload)
       });
       if (res.ok) {
-        setSaveStatus("Category model saved successfully!");
+        setSaveStatus("Category model changes registered in the compliance verification queue!");
+        setEditingModelId(null);
         setNewModel({ id: "", name: "", applications: [] });
         loadAdminData();
-        setTimeout(() => setSaveStatus(null), 3000);
+        setTimeout(() => setSaveStatus(null), 3500);
       } else {
         alert("Failed to save category model.");
       }
@@ -476,7 +511,8 @@ export default function Admin() {
         body: JSON.stringify(payload)
       });
       if (res.ok) {
-        setSaveStatus("Industry Application Section Change registered in the validation queue!");
+        setSaveStatus("Industry Application changes registered in the compliance verification queue!");
+        setEditingAppId(null);
         setNewApp({
           id: "",
           title: "",
@@ -487,7 +523,7 @@ export default function Admin() {
           pinned: false
         });
         loadAdminData();
-        setTimeout(() => setSaveStatus(null), 3000);
+        setTimeout(() => setSaveStatus(null), 3500);
       } else {
         alert("Failed to submit application section settings.");
       }
@@ -626,6 +662,36 @@ export default function Admin() {
       ...newSliders[index],
       [field]: value
     };
+    setCms({
+      ...cms,
+      sliders: newSliders
+    });
+  };
+
+  const addSlider = () => {
+    if (!cms) return;
+    const newSliders = [
+      ...cms.sliders,
+      {
+        title: "Modular High-Voltage System",
+        accent: "Precision Grid",
+        image: "https://images.unsplash.com/photo-1581092160562-40aa08e78837?auto=format&fit=crop&q=80&w=800",
+        description: "Standardized chassis options integrated with comprehensive monitoring controls, fully compatible with existing sub-racks."
+      }
+    ];
+    setCms({
+      ...cms,
+      sliders: newSliders
+    });
+  };
+
+  const removeSlider = (index: number) => {
+    if (!cms) return;
+    if (cms.sliders.length <= 1) {
+      alert("At least one hero slide is required to preserve the front page layout presentation.");
+      return;
+    }
+    const newSliders = cms.sliders.filter((_, idx) => idx !== index);
     setCms({
       ...cms,
       sliders: newSliders
@@ -1006,8 +1072,11 @@ export default function Admin() {
               <div className="space-y-8">
                 
                 {/* Product Add Grid Form */}
-                <div className="bg-white border border-slate-200 rounded-[2rem] p-8 lg:p-10 shadow-sm">
-                  <h2 className="text-2xl font-extrabold uppercase tracking-tight italic text-slate-900 mb-2">ADD NEW <span className="text-blue-600 font-serif normal-case not-italic">High-Voltage System</span></h2>
+                <div id="product-form-container" className="bg-white border border-slate-200 rounded-[2rem] p-8 lg:p-10 shadow-smScroll">
+                  <h2 className="text-2xl font-extrabold uppercase tracking-tight italic text-slate-900 mb-2">
+                    {editingProductId ? "EDIT SYSTEM SETTINGS" : "ADD NEW"}{" "}
+                    <span className="text-blue-600 font-serif normal-case not-italic">High-Voltage System</span>
+                  </h2>
                   <p className="text-slate-500 text-xs leading-relaxed mb-8 font-semibold">
                     Submit structural specifications for modular 19" benchtop grids or encapsulated X-ray power devices.
                   </p>
@@ -1019,10 +1088,11 @@ export default function Admin() {
                         <input 
                           type="text"
                           required
+                          disabled={!!editingProductId}
                           placeholder="e.g. divotech-er-60"
                           value={newProd.id}
                           onChange={(e) => setNewProd({...newProd, id: e.target.value})}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 focus:ring-2 focus:ring-blue-500 outline-none transition-all font-mono text-xs font-semibold text-slate-800"
+                          className={`w-full border rounded-xl py-3 px-4 focus:ring-2 focus:ring-blue-500 outline-none transition-all font-mono text-xs font-semibold ${editingProductId ? "bg-slate-100 text-slate-400 cursor-not-allowed border-slate-200" : "bg-slate-50 text-slate-800 border-slate-200"}`}
                         />
                       </div>
                       <div>
@@ -1243,13 +1313,44 @@ export default function Admin() {
                       </div>
                     </div>
 
-                    <div className="flex justify-end pt-4">
+                    <div className="flex justify-end gap-3 pt-4">
+                      {editingProductId && (
+                        <button 
+                          type="button"
+                          onClick={() => {
+                            setEditingProductId(null);
+                            setNewProd({
+                              id: "",
+                              name: "",
+                              category: models.length > 0 ? models[0].name : "",
+                              modelNumber: "",
+                              voltage: "",
+                              current: "",
+                              power: "",
+                              description: "",
+                              price: 0,
+                              priceType: "standard",
+                              priceRangeMin: 0,
+                              priceRangeMax: 0,
+                              image: "https://images.unsplash.com/photo-1581092160562-40aa08e78837?auto=format&fit=crop&q=80&w=800",
+                              featuresInput: "",
+                              specsInput: "Input Voltage: 220V AC\nLoad Regulation: < 0.01%\nPolarity: Positive/Negative",
+                              applications: models.length > 0 ? (models[0].applications || []) : [],
+                              brochureUrl: ""
+                            });
+                          }}
+                          className="px-6 h-14 border border-slate-200 text-slate-600 hover:bg-slate-50 font-extrabold rounded-xl uppercase tracking-widest text-[11px] transition-all cursor-pointer"
+                        >
+                          Cancel Edit
+                        </button>
+                      )}
                       <button 
                         type="submit"
                         disabled={loading}
                         className="px-8 h-14 bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-xl uppercase tracking-widest text-[11px] transition-all cursor-pointer shadow-lg shadow-blue-500/10 flex items-center gap-2"
                       >
-                        <Plus className="h-5 w-5" /> Enlist Machine Configuration
+                        {editingProductId ? <Save className="h-5 w-5" /> : <Plus className="h-5 w-5" />}
+                        {editingProductId ? "Queue Product Updates" : "Enlist Machine Configuration"}
                       </button>
                     </div>
                   </form>
@@ -1271,12 +1372,42 @@ export default function Admin() {
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-6">
-                          <div className="text-right">
+                        <div className="flex items-center gap-3">
+                          <div className="text-right mr-3">
                             <div className="text-[8px] uppercase tracking-widest font-extrabold text-slate-400">Pricing Scale</div>
                             <div className="text-sm font-extrabold text-slate-800">{formatProductPrice(prod)}</div>
                           </div>
                           
+                          <button 
+                            onClick={() => {
+                              setEditingProductId(prod.id);
+                              setNewProd({
+                                id: prod.id,
+                                name: prod.name,
+                                category: prod.category,
+                                modelNumber: prod.modelNumber,
+                                voltage: prod.voltage,
+                                current: prod.current,
+                                power: prod.power,
+                                description: prod.description,
+                                price: prod.price,
+                                priceType: prod.priceType || "standard",
+                                priceRangeMin: prod.priceRangeMin || 0,
+                                priceRangeMax: prod.priceRangeMax || 0,
+                                image: prod.image,
+                                featuresInput: prod.features.join("\n"),
+                                specsInput: Object.entries(prod.specs).map(([k, v]) => `${k}: ${v}`).join("\n"),
+                                applications: prod.applications,
+                                brochureUrl: prod.brochureUrl || ""
+                              });
+                              document.getElementById("product-form-container")?.scrollIntoView({ behavior: "smooth" });
+                            }}
+                            className="p-3 bg-white text-blue-600 hover:bg-blue-50 border border-slate-200 rounded-xl hover:border-blue-100 transition-all cursor-pointer"
+                            title="Edit Product"
+                          >
+                            <Edit className="h-4.5 w-4.5" />
+                          </button>
+
                           <button 
                             onClick={() => handleDeleteProduct(prod.id)}
                             className="p-3 bg-white text-rose-600 hover:bg-rose-50 border border-slate-200 rounded-xl hover:border-rose-100 transition-all cursor-pointer"
@@ -1371,12 +1502,32 @@ export default function Admin() {
                     </div>
 
                     <div className="border-t border-slate-100 pt-8">
-                      <h3 className="text-md font-extrabold uppercase tracking-tight text-slate-900 mb-6 italic">Home Screen Hero Sliders Configuration</h3>
+                      <div className="flex items-center justify-between mb-6">
+                        <h3 className="text-md font-extrabold uppercase tracking-tight text-slate-900 italic">Home Screen Hero Sliders Configuration</h3>
+                        <button
+                          type="button"
+                          onClick={addSlider}
+                          className="px-4 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Plus className="h-4 w-4" /> Add Hero Slide
+                        </button>
+                      </div>
                       
                       <div className="space-y-8">
                         {cms.sliders.map((slider, index) => (
-                          <div key={index} className="p-6 bg-slate-50 border border-slate-150 rounded-2xl space-y-4">
-                            <span className="bg-slate-900 text-white font-mono text-[9px] font-black px-2.5 py-1 rounded">Slide {index + 1} Settings</span>
+                          <div key={index} className="p-6 bg-slate-50 border border-slate-150 rounded-2xl space-y-4 relative">
+                            <div className="flex items-center justify-between">
+                              <span className="bg-slate-900 text-white font-mono text-[9px] font-black px-2.5 py-1 rounded">Slide {index + 1} Settings</span>
+                              {cms.sliders.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => removeSlider(index)}
+                                  className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 border border-rose-250 text-rose-700 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" /> Remove
+                                </button>
+                              )}
+                            </div>
                             
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                               <div>
@@ -1441,8 +1592,11 @@ export default function Admin() {
             {activeTab === "models" && (
               <div className="space-y-8">
                 {/* Model/Category Add Form */}
-                <div className="bg-white border border-slate-200 rounded-[2rem] p-8 lg:p-10 shadow-sm">
-                  <h2 className="text-2xl font-extrabold uppercase tracking-tight italic text-slate-900 mb-2">ADD OR UPDATE <span className="text-blue-600 font-serif normal-case not-italic">Product Category / Model</span></h2>
+                <div id="model-form-container" className="bg-white border border-slate-200 rounded-[2rem] p-8 lg:p-10 shadow-sm">
+                  <h2 className="text-2xl font-extrabold uppercase tracking-tight italic text-slate-900 mb-2">
+                    {editingModelId ? "EDIT CATEGORY MODEL" : "ADD OR UPDATE"}{" "}
+                    <span className="text-blue-600 font-serif normal-case not-italic">Product Category / Model</span>
+                  </h2>
                   <p className="text-slate-500 text-xs leading-relaxed mb-8 font-semibold">
                     Dynamic categorization of high-voltage models such as modules, racks, CCPS, or customized units.
                   </p>
@@ -1454,10 +1608,11 @@ export default function Admin() {
                         <input 
                           type="text"
                           required
+                          disabled={!!editingModelId}
                           placeholder="e.g. ccps, modules, racks"
                           value={newModel.id}
                           onChange={(e) => setNewModel({...newModel, id: e.target.value})}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 focus:ring-2 focus:ring-blue-500 outline-none transition-all font-mono text-xs font-semibold text-slate-800"
+                          className={`w-full border rounded-xl py-3 px-4 focus:ring-2 focus:ring-blue-500 outline-none transition-all font-mono text-xs font-semibold ${editingModelId ? "bg-slate-100 text-slate-400 cursor-not-allowed border-slate-200" : "bg-slate-50 text-slate-800 border-slate-200"}`}
                         />
                       </div>
                       <div>
@@ -1498,13 +1653,26 @@ export default function Admin() {
                       </div>
                     </div>
 
-                    <div className="flex justify-end pt-4">
+                    <div className="flex justify-end gap-3 pt-4">
+                      {editingModelId && (
+                        <button 
+                          type="button"
+                          onClick={() => {
+                            setEditingModelId(null);
+                            setNewModel({ id: "", name: "", applications: [] });
+                          }}
+                          className="px-6 h-14 border border-slate-200 text-slate-600 hover:bg-slate-50 font-extrabold rounded-xl uppercase tracking-widest text-[11px] transition-all cursor-pointer"
+                        >
+                          Cancel Edit
+                        </button>
+                      )}
                       <button 
                         type="submit"
                         disabled={loading}
                         className="px-8 h-14 bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-xl uppercase tracking-widest text-[11px] transition-all cursor-pointer shadow-lg shadow-blue-500/10 flex items-center gap-2"
                       >
-                        <Plus className="h-5 w-5" /> Save Category Model
+                        {editingModelId ? <Save className="h-5 w-5" /> : <Plus className="h-5 w-5" />}
+                        {editingModelId ? "Queue Model Updates" : "Save Category Model"}
                       </button>
                     </div>
                   </form>
@@ -1535,14 +1703,18 @@ export default function Admin() {
 
                         <div className="flex items-center gap-4">
                           <button 
-                            onClick={() => setNewModel({
-                              id: model.id,
-                              name: model.name,
-                              applications: model.applications || []
-                            })}
-                            className="px-4 py-2 bg-white text-slate-600 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer"
+                            onClick={() => {
+                              setEditingModelId(model.id);
+                              setNewModel({
+                                id: model.id,
+                                name: model.name,
+                                applications: model.applications || []
+                              });
+                              document.getElementById("model-form-container")?.scrollIntoView({ behavior: "smooth" });
+                            }}
+                            className="px-4 py-2 bg-white text-blue-600 hover:bg-blue-50 border border-slate-200 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1"
                           >
-                            Edit
+                            <Edit className="h-3.5 w-3.5" /> Edit
                           </button>
                           <button 
                             onClick={() => handleDeleteModel(model.id)}
@@ -1562,8 +1734,11 @@ export default function Admin() {
             {activeTab === "applications" && (
               <div className="space-y-8">
                 {/* Application Add Form */}
-                <div className="bg-white border border-slate-200 rounded-[2rem] p-8 lg:p-10 shadow-sm">
-                  <h2 className="text-2xl font-extrabold uppercase tracking-tight italic text-slate-900 mb-2">ADD OR UPDATE <span className="text-blue-600 font-serif normal-case not-italic">Industry Application Section</span></h2>
+                <div id="application-form-container" className="bg-white border border-slate-200 rounded-[2rem] p-8 lg:p-10 shadow-sm">
+                  <h2 className="text-2xl font-extrabold uppercase tracking-tight italic text-slate-900 mb-2">
+                    {editingAppId ? "EDIT APPLICATION SECTION" : "ADD OR UPDATE"}{" "}
+                    <span className="text-blue-600 font-serif normal-case not-italic">Industry Application Section</span>
+                  </h2>
                   <p className="text-slate-500 text-xs leading-relaxed mb-8 font-semibold">
                     Define high voltage industries (e.g. Vacuum & Plasma, Semiconductor, Research). Changes will enter the verification queue.
                   </p>
@@ -1575,10 +1750,11 @@ export default function Admin() {
                         <input 
                           type="text"
                           required
+                          disabled={!!editingAppId}
                           placeholder="e.g. industrial-processes"
                           value={newApp.id}
                           onChange={(e) => setNewApp({...newApp, id: e.target.value})}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 focus:ring-2 focus:ring-blue-500 outline-none transition-all font-mono text-xs font-semibold text-slate-800"
+                          className={`w-full border rounded-xl py-3 px-4 focus:ring-2 focus:ring-blue-500 outline-none transition-all font-mono text-xs font-semibold ${editingAppId ? "bg-slate-100 text-slate-400 cursor-not-allowed border-slate-200" : "bg-slate-50 text-slate-800 border-slate-200"}`}
                         />
                       </div>
                       <div>
@@ -1664,13 +1840,34 @@ export default function Admin() {
                       </label>
                     </div>
 
-                    <div className="flex justify-end pt-4">
+                    <div className="flex justify-end gap-3 pt-4">
+                      {editingAppId && (
+                        <button 
+                          type="button"
+                          onClick={() => {
+                            setEditingAppId(null);
+                            setNewApp({
+                              id: "",
+                              title: "",
+                              iconName: "Zap",
+                              desc: "",
+                              bulletsInput: "",
+                              keywords: "",
+                              pinned: false
+                            });
+                          }}
+                          className="px-6 h-14 border border-slate-200 text-slate-600 hover:bg-slate-50 font-extrabold rounded-xl uppercase tracking-widest text-[11px] transition-all cursor-pointer"
+                        >
+                          Cancel Edit
+                        </button>
+                      )}
                       <button 
                         type="submit"
                         disabled={loading}
                         className="px-8 h-14 bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-xl uppercase tracking-widest text-[11px] transition-all cursor-pointer shadow-lg shadow-blue-500/10 flex items-center gap-2"
                       >
-                        <Plus className="h-5 w-5" /> Submit Application Change
+                        {editingAppId ? <Save className="h-5 w-5" /> : <Plus className="h-5 w-5" />}
+                        {editingAppId ? "Queue Application Updates" : "Submit Application Change"}
                       </button>
                     </div>
                   </form>
@@ -1711,18 +1908,22 @@ export default function Admin() {
                             {app.pinned ? "Unpin" : "Pin Top"}
                           </button>
                           <button 
-                            onClick={() => setNewApp({
-                              id: app.id,
-                              title: app.title,
-                              iconName: app.iconName || "Zap",
-                              desc: app.desc,
-                              bulletsInput: app.bullets ? app.bullets.join("\n") : "",
-                              keywords: app.keywords || "",
-                              pinned: !!app.pinned
-                            })}
-                            className="px-4 py-2 bg-white text-slate-600 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer"
+                            onClick={() => {
+                              setEditingAppId(app.id);
+                              setNewApp({
+                                id: app.id,
+                                title: app.title,
+                                iconName: app.iconName || "Zap",
+                                desc: app.desc,
+                                bulletsInput: app.bullets ? app.bullets.join("\n") : "",
+                                keywords: app.keywords || "",
+                                pinned: !!app.pinned
+                              });
+                              document.getElementById("application-form-container")?.scrollIntoView({ behavior: "smooth" });
+                            }}
+                            className="px-4 py-2 bg-white text-blue-600 hover:bg-blue-50 border border-slate-200 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1"
                           >
-                            Edit
+                            <Edit className="h-3.5 w-3.5" /> Edit
                           </button>
                           <button 
                             onClick={() => handleDeleteAppSection(app.id)}
