@@ -471,9 +471,9 @@ export default function Admin() {
         body: JSON.stringify(cms)
       });
       if (res.ok) {
-        setSaveStatus("Company CMS settings applied dynamically!");
+        setSaveStatus("Company CMS changes registered in the compliance verification queue!");
         loadAdminData();
-        setTimeout(() => setSaveStatus(null), 3000);
+        setTimeout(() => setSaveStatus(null), 3500);
       } else {
         alert("Failed to update corporate CMS structure.");
       }

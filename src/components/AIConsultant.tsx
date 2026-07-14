@@ -43,11 +43,22 @@ export default function AIConsultant() {
           history: messages
         }),
       });
-      const data = await response.json();
-      const modelMessage: Message = { role: "model", parts: [{ text: data.text }] };
-      setMessages(prev => [...prev, modelMessage]);
+      if (response.ok) {
+        const data = await response.json();
+        const text = data.text || "I was unable to formulate a response at this time. Please try rephrasing your inquiry.";
+        const modelMessage: Message = { role: "model", parts: [{ text }] };
+        setMessages(prev => [...prev, modelMessage]);
+      } else {
+        const errorText = response.status === 503 
+          ? "Our AI technical assistant is currently in offline mode. Please feel free to submit a contact inquiry, or reach us directly at info@divotech.in."
+          : "We encountered a temporary connection issue. Please try again shortly or contact support at info@divotech.in.";
+        const modelMessage: Message = { role: "model", parts: [{ text: errorText }] };
+        setMessages(prev => [...prev, modelMessage]);
+      }
     } catch (error) {
       console.error("Consultation Error:", error);
+      const modelMessage: Message = { role: "model", parts: [{ text: "Network connection lost. Please verify your internet connection and try again." }] };
+      setMessages(prev => [...prev, modelMessage]);
     } finally {
       setIsLoading(false);
     }

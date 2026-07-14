@@ -34,9 +34,19 @@ export default function ProductDetail() {
 
   useEffect(() => {
     fetch(`/api/products/${id}`)
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) {
+          throw new Error("Product not found");
+        }
+        return res.json();
+      })
       .then(data => {
         setProduct(data);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error(err);
+        setProduct(null);
         setLoading(false);
       });
   }, [id]);
