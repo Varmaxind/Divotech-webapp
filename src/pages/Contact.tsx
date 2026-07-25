@@ -75,8 +75,11 @@ export default function Contact() {
                 <h3 className="text-2xl font-bold text-slate-900 mb-4">Transmission Received</h3>
                 <p className="text-slate-500 mb-10">Our technical team will review your requirements and provide a detailed proforma and datasheet within 24 business hours.</p>
                 <button 
-                  onClick={() => setStatus("idle")}
-                  className="px-8 py-4 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 transition-colors uppercase tracking-widest text-sm"
+                  onClick={() => {
+                    setFormData({ name: "", email: "", company: "", message: "", industry: "Research", voltageRange: "" });
+                    setStatus("idle");
+                  }}
+                  className="px-8 py-4 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 transition-colors uppercase tracking-widest text-sm cursor-pointer"
                 >
                   Send Another Inquiry
                 </button>

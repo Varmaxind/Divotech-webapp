@@ -81,6 +81,15 @@ export interface CMSData {
   }>;
 }
 
+export interface User {
+  email: string;
+  passwordHash: string;
+  verified: boolean;
+  verificationCode?: string;
+  verificationCodeExpires?: string;
+  createdAt: string;
+}
+
 // Ensure database file and directory exist
 function initDB() {
   if (!fs.existsSync(DATA_DIR)) {
@@ -277,20 +286,58 @@ function initDB() {
       cms: defaultCMS
     };
 
-    fs.writeFileSync(DB_FILE, JSON.stringify(initialDB, null, 2), "utf8");
+    const tempPath = path.join(DATA_DIR, `.db.json.tmp.${Date.now()}.${Math.random().toString(36).slice(2, 8)}`);
+    fs.writeFileSync(tempPath, JSON.stringify(initialDB, null, 2), "utf8");
+    fs.renameSync(tempPath, DB_FILE);
   }
 }
+
+// In-memory data cache to prevent concurrency race conditions and redundant file reads
+let cachedData: any = null;
 
 // Ensure execution
 initDB();
 
-function getDB() {
+function saveDB(data: any) {
   initDB();
-  const content = fs.readFileSync(DB_FILE, "utf8");
-  const data = JSON.parse(content);
+  cachedData = data;
+  const tempPath = path.join(DATA_DIR, `.db.json.tmp.${Date.now()}.${Math.random().toString(36).slice(2, 8)}`);
+  try {
+    fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), "utf8");
+    fs.renameSync(tempPath, DB_FILE);
+  } catch (err) {
+    console.error("Atomic database file write failed:", err);
+    if (fs.existsSync(tempPath)) {
+      try { fs.unlinkSync(tempPath); } catch (_) {}
+    }
+    throw err;
+  }
+}
+
+function getDB() {
+  if (cachedData) {
+    return cachedData;
+  }
+
+  initDB();
+  try {
+    const content = fs.readFileSync(DB_FILE, "utf8");
+    cachedData = JSON.parse(content);
+  } catch (err) {
+    console.error("Database file corrupted or unreadable. Backing up corrupted file and initializing fresh state...", err);
+    if (fs.existsSync(DB_FILE)) {
+      try {
+        fs.renameSync(DB_FILE, path.join(DATA_DIR, `db.corrupted.${Date.now()}.json`));
+      } catch (_) {}
+    }
+    initDB();
+    const content = fs.readFileSync(DB_FILE, "utf8");
+    cachedData = JSON.parse(content);
+  }
+
   let dirty = false;
-  if (!data.applications) {
-    data.applications = [
+  if (!cachedData.applications) {
+    cachedData.applications = [
       {
         id: "industrial-processes",
         title: "Industrial Processes",
@@ -345,12 +392,16 @@ function getDB() {
     ];
     dirty = true;
   }
-  if (!data.pendingChanges) {
-    data.pendingChanges = [];
+  if (!cachedData.pendingChanges) {
+    cachedData.pendingChanges = [];
     dirty = true;
   }
-  if (!data.models) {
-    data.models = [
+  if (!cachedData.users) {
+    cachedData.users = [];
+    dirty = true;
+  }
+  if (!cachedData.models) {
+    cachedData.models = [
       { id: "regulated-dc", name: "High Voltage Regulated DC Power Supplies", applications: ["Industrial Processes", "Vacuum & Plasma", "Analytical Instrumentation", "Inspection & Test Equipment", "Semiconductor Fabrication", "Research & Academia"] },
       { id: "pulsed-hvps", name: "Pulsed High Voltage Power Supplies (Pulsed HVPS)", applications: ["Vacuum & Plasma", "Semiconductor Fabrication", "Research & Academia"] },
       { id: "ccps", name: "HV Capacitor Charging Power Supplies (CCPS)", applications: ["Research & Academia", "Industrial Processes", "Inspection & Test Equipment"] },
@@ -363,8 +414,8 @@ function getDB() {
   }
   // Migrate products to support priceType, priceRangeMin, priceRangeMax
   let productsMigrated = false;
-  if (data.products && Array.isArray(data.products)) {
-    data.products.forEach((prod: any) => {
+  if (cachedData.products && Array.isArray(cachedData.products)) {
+    cachedData.products.forEach((prod: any) => {
       if (!prod.priceType) {
         prod.priceType = prod.price > 0 ? "standard" : "contact";
         productsMigrated = true;
@@ -384,14 +435,9 @@ function getDB() {
   }
 
   if (dirty) {
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), "utf8");
+    saveDB(cachedData);
   }
-  return data;
-}
-
-function saveDB(data: any) {
-  initDB();
-  fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), "utf8");
+  return cachedData;
 }
 
 export const db = {
@@ -557,5 +603,22 @@ export const db = {
     data.cms = { ...data.cms, ...cms };
     saveDB(data);
     return data.cms;
+  },
+  getUsers: (): User[] => {
+    return getDB().users || [];
+  },
+  saveUser: (user: User): User => {
+    const data = getDB();
+    if (!data.users) {
+      data.users = [];
+    }
+    const index = data.users.findIndex((u: any) => u.email.toLowerCase().trim() === user.email.toLowerCase().trim());
+    if (index >= 0) {
+      data.users[index] = user;
+    } else {
+      data.users.push(user);
+    }
+    saveDB(data);
+    return user;
   }
 };

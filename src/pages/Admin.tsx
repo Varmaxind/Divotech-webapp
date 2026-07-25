@@ -97,6 +97,12 @@ export default function Admin() {
   const [loginError, setLoginError] = useState("");
   const [activeTab, setActiveTab] = useState<"inquiries" | "products" | "cms" | "models" | "applications" | "verification">("inquiries");
   
+  // Custom Secure Admin Authentication States
+  const [authMode, setAuthMode] = useState<"login" | "register" | "verify">("login");
+  const [verificationCodeInput, setVerificationCodeInput] = useState("");
+  const [demoVerificationCode, setDemoVerificationCode] = useState<string | null>(null);
+  const [authSuccessMessage, setAuthSuccessMessage] = useState("");
+
   // Data State
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -119,33 +125,89 @@ export default function Admin() {
   const [editingModelId, setEditingModelId] = useState<string | null>(null);
   const [editingAppId, setEditingAppId] = useState<string | null>(null);
 
-  // Listen for Google Auth Message Communication
+  // Google Identity Services (GSI) SDK Integration
   useEffect(() => {
-    const handleAuthMessage = (event: MessageEvent) => {
-      if (event.data && event.data.type === "OAUTH_AUTH_SUCCESS") {
-        const loggedInEmail = event.data.email;
-        const fakeToken = `${loggedInEmail}|google_auth_active_${Date.now()}`;
-        localStorage.setItem("admin_token", fakeToken);
-        setToken(fakeToken);
-        setSaveStatus(`Logged in securely via Google as ${loggedInEmail}!`);
-        setTimeout(() => setSaveStatus(null), 3500);
+    let gsiScript: HTMLScriptElement | null = null;
+
+    const handleCredentialResponse = async (response: any) => {
+      setLoading(true);
+      setLoginError("");
+      setAuthSuccessMessage("");
+      try {
+        const res = await fetch("/api/admin/google-sso", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ credential: response.credential })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          localStorage.setItem("admin_token", data.token);
+          setToken(data.token);
+          setSaveStatus(`Welcome back, ${data.email}! Corporate access granted.`);
+          setTimeout(() => setSaveStatus(null), 3500);
+        } else {
+          setLoginError(data.error || "MFA validation or cryptographic signature verification failed.");
+        }
+      } catch (err) {
+        setLoginError("Failed to communicate with secure SSO verification gateway.");
+      } finally {
+        setLoading(false);
       }
     };
-    window.addEventListener("message", handleAuthMessage);
-    return () => window.removeEventListener("message", handleAuthMessage);
-  }, []);
 
-  const handleGoogleLogin = () => {
-    const width = 500;
-    const height = 600;
-    const left = window.screen.width / 2 - width / 2;
-    const top = window.screen.height / 2 - height / 2;
-    window.open(
-      "/api/auth/google",
-      "google_sign_in",
-      `width=${width},height=${height},top=${top},left=${left},scrollbars=yes,resizable=yes`
-    );
-  };
+    const initializeGsi = () => {
+      const google = (window as any).google;
+      if (google?.accounts?.id) {
+        google.accounts.id.initialize({
+          client_id: (import.meta as any).env.VITE_GOOGLE_CLIENT_ID || "",
+          callback: handleCredentialResponse,
+          hd: "divotech.in", // 2. Frontend Domain Restriction
+          auto_select: false,
+          cancel_on_tap_outside: true
+        });
+
+        const btnDiv = document.getElementById("google-button-div");
+        if (btnDiv) {
+          google.accounts.id.renderButton(btnDiv, {
+            theme: "filled_blue",
+            size: "large",
+            text: "signin_with",
+            shape: "rectangular",
+            logo_alignment: "left",
+            width: 320
+          });
+        }
+      }
+    };
+
+    // Load GSI Script dynamically
+    const scriptId = "google-gsi-client";
+    let existingScript = document.getElementById(scriptId) as HTMLScriptElement;
+    
+    if (!existingScript) {
+      gsiScript = document.createElement("script");
+      gsiScript.src = "https://accounts.google.com/gsi/client";
+      gsiScript.id = scriptId;
+      gsiScript.async = true;
+      gsiScript.defer = true;
+      gsiScript.onload = initializeGsi;
+      document.head.appendChild(gsiScript);
+    } else {
+      initializeGsi();
+    }
+
+    // Interval to re-check button rendering in case DOM nodes re-render
+    const interval = setInterval(() => {
+      const btnDiv = document.getElementById("google-button-div");
+      if (btnDiv && btnDiv.children.length === 0) {
+        initializeGsi();
+      }
+    }, 1000);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [token]);
 
   // New Application Form State
   const [newApp, setNewApp] = useState({
@@ -194,7 +256,10 @@ export default function Admin() {
       const [productsRes, inquiriesRes, cmsRes, modelsRes, appsRes, pendingRes] = await Promise.all([
         fetch("/api/products").then(r => r.json()),
         fetch("/api/admin/inquiries", {
-          headers: { "X-Admin-Email": token ? token.split("|")[0] : "" }
+          headers: { 
+            "X-Admin-Email": token ? token.split("|")[0] : "",
+            "Authorization": token ? `Bearer ${token}` : ""
+          }
         }).then(r => {
           if (r.status === 401) {
             localStorage.removeItem("admin_token");
@@ -206,7 +271,17 @@ export default function Admin() {
         fetch("/api/cms").then(r => r.json()),
         fetch("/api/models").then(r => r.json()),
         fetch("/api/applications").then(r => r.json()),
-        fetch("/api/admin/pending-changes").then(r => r.json())
+        fetch("/api/admin/pending-changes", {
+          headers: { 
+            "X-Admin-Email": token ? token.split("|")[0] : "",
+            "Authorization": token ? `Bearer ${token}` : ""
+          }
+        }).then(r => {
+          if (r.status === 401) {
+            return [];
+          }
+          return r.json();
+        })
       ]);
 
       setProducts(productsRes);
@@ -214,7 +289,7 @@ export default function Admin() {
       setCms(cmsRes);
       setModels(modelsRes);
       setApplications(appsRes);
-      setPendingChanges(pendingRes);
+      setPendingChanges(pendingRes || []);
 
       // Pre-select first category and its applications if category is currently empty
       if (modelsRes && modelsRes.length > 0) {
@@ -242,30 +317,104 @@ export default function Admin() {
     }
   }, [token]);
 
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError("");
+    setAuthSuccessMessage("");
+    setDemoVerificationCode(null);
+
+    const trimmedEmail = email.toLowerCase().trim();
+    if (!trimmedEmail.endsWith("@divotech.in")) {
+      setLoginError("Access Denied: Only verified corporate domains ending in @divotech.in are authorized to register administrator systems.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch("/api/admin/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: trimmedEmail, password })
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        setAuthMode("verify");
+        setAuthSuccessMessage("An administrative security passkey has been generated! Check the system mail server gateway log.");
+        if (data._demoVerificationCode) {
+          setDemoVerificationCode(data._demoVerificationCode);
+        }
+      } else {
+        setLoginError(data.error || "System registration failed. Please contact IT compliance.");
+      }
+    } catch {
+      setLoginError("Network connection error. Back-end security services are currently unresponsive.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError("");
+    setAuthSuccessMessage("");
+
+    setLoading(true);
+    try {
+      const res = await fetch("/api/admin/verify-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.toLowerCase().trim(), code: verificationCodeInput.trim() })
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        setAuthMode("login");
+        setAuthSuccessMessage("Corporate email verified successfully! Your system administrator account is active. Please login below.");
+        setVerificationCodeInput("");
+        setDemoVerificationCode(null);
+      } else {
+        setLoginError(data.error || "Multi-factor authentication code is invalid.");
+      }
+    } catch {
+      setLoginError("Network connection error during verification dispatch.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError("");
-    if (!email || (!email.toLowerCase().trim().endsWith("@divotech.in") && !email.toLowerCase().trim().endsWith("@gmail.com"))) {
-      setLoginError("Only @divotech.in or authorized @gmail.com email addresses are permitted for administrative access.");
+    setAuthSuccessMessage("");
+    
+    const trimmedEmail = email.toLowerCase().trim();
+    if (!trimmedEmail.endsWith("@divotech.in")) {
+      setLoginError("Access Denied: Administrative console access is strictly limited to authorized @divotech.in corporate addresses.");
       return;
     }
+
+    setLoading(true);
     try {
       const res = await fetch("/api/admin/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.toLowerCase().trim(), password })
+        body: JSON.stringify({ email: trimmedEmail, password })
       });
 
+      const data = await res.json();
       if (res.ok) {
-        const data = await res.json();
         localStorage.setItem("admin_token", data.token);
         setToken(data.token);
+        setSaveStatus(data.message || "Administrative console session verified successfully.");
+        setTimeout(() => setSaveStatus(null), 3000);
       } else {
-        const err = await res.json();
-        setLoginError(err.error || "Authentication Failed");
+        setLoginError(data.error || "Access Denied: Invalid credentials or unverified address.");
       }
     } catch {
-      setLoginError("Could not connect to back-end services.");
+      setLoginError("Could not connect to back-end administration gateway.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -273,6 +422,9 @@ export default function Admin() {
     localStorage.removeItem("admin_token");
     setToken(null);
     setSelectedInquiry(null);
+    setAuthSuccessMessage("");
+    setLoginError("");
+    setDemoVerificationCode(null);
   };
 
   // Create Product Submit
@@ -326,7 +478,8 @@ export default function Admin() {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
-          "X-Admin-Email": token ? token.split("|")[0] : ""
+          "X-Admin-Email": token ? token.split("|")[0] : "",
+          "Authorization": token ? `Bearer ${token}` : ""
         },
         body: JSON.stringify(payload)
       });
@@ -383,7 +536,8 @@ export default function Admin() {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
-          "X-Admin-Email": token ? token.split("|")[0] : ""
+          "X-Admin-Email": token ? token.split("|")[0] : "",
+          "Authorization": token ? `Bearer ${token}` : ""
         },
         body: JSON.stringify(payload)
       });
@@ -417,7 +571,10 @@ export default function Admin() {
     try {
       const res = await fetch(`/api/admin/models/${id}`, { 
         method: "DELETE",
-        headers: { "X-Admin-Email": token ? token.split("|")[0] : "" }
+        headers: { 
+          "X-Admin-Email": token ? token.split("|")[0] : "",
+          "Authorization": token ? `Bearer ${token}` : ""
+        }
       });
       if (res.ok) {
         setSaveStatus("Category model deleted successfully!");
@@ -440,7 +597,10 @@ export default function Admin() {
     try {
       const res = await fetch(`/api/admin/products/${id}`, {
         method: "DELETE",
-        headers: { "X-Admin-Email": token ? token.split("|")[0] : "" }
+        headers: { 
+          "X-Admin-Email": token ? token.split("|")[0] : "",
+          "Authorization": token ? `Bearer ${token}` : ""
+        }
       });
       if (res.ok) {
         setSaveStatus("Deleted product " + id);
@@ -466,7 +626,8 @@ export default function Admin() {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
-          "X-Admin-Email": token ? token.split("|")[0] : ""
+          "X-Admin-Email": token ? token.split("|")[0] : "",
+          "Authorization": token ? `Bearer ${token}` : ""
         },
         body: JSON.stringify(cms)
       });
@@ -506,7 +667,8 @@ export default function Admin() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Admin-Email": token ? token.split("|")[0] : ""
+          "X-Admin-Email": token ? token.split("|")[0] : "",
+          "Authorization": token ? `Bearer ${token}` : ""
         },
         body: JSON.stringify(payload)
       });
@@ -546,7 +708,8 @@ export default function Admin() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Admin-Email": token ? token.split("|")[0] : ""
+          "X-Admin-Email": token ? token.split("|")[0] : "",
+          "Authorization": token ? `Bearer ${token}` : ""
         },
         body: JSON.stringify(payload)
       });
@@ -569,7 +732,10 @@ export default function Admin() {
     try {
       const res = await fetch(`/api/admin/applications/${id}`, {
         method: "DELETE",
-        headers: { "X-Admin-Email": token ? token.split("|")[0] : "" }
+        headers: { 
+          "X-Admin-Email": token ? token.split("|")[0] : "",
+          "Authorization": token ? `Bearer ${token}` : ""
+        }
       });
       if (res.ok) {
         setSaveStatus("Deletion request submitted for compliance verification!");
@@ -588,21 +754,18 @@ export default function Admin() {
   // Verify / Approve Pending Change
   const handleApproveChange = async (changeId: string) => {
     setVerificationError("");
-    if (!verifierEmailInput || !verifierEmailInput.toLowerCase().trim().endsWith("@divotech.in")) {
-      setVerificationError("Double verification requires a valid @divotech.in corporate email address.");
-      return;
-    }
-    
     setLoading(true);
     try {
       const res = await fetch(`/api/admin/pending-changes/${changeId}/approve`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ verifierEmail: verifierEmailInput.toLowerCase().trim() })
+        headers: { 
+          "Content-Type": "application/json",
+          "X-Admin-Email": token ? token.split("|")[0] : "",
+          "Authorization": token ? `Bearer ${token}` : ""
+        }
       });
       if (res.ok) {
         setSaveStatus("Pending change APPROVED & deployed to live database!");
-        setVerifierEmailInput("");
         loadAdminData();
         setTimeout(() => setSaveStatus(null), 3000);
       } else {
@@ -619,21 +782,18 @@ export default function Admin() {
   // Reject Pending Change
   const handleRejectChange = async (changeId: string) => {
     setVerificationError("");
-    if (!verifierEmailInput || !verifierEmailInput.toLowerCase().trim().endsWith("@divotech.in")) {
-      setVerificationError("Rejection audits require a valid @divotech.in corporate email address.");
-      return;
-    }
-    
     setLoading(true);
     try {
       const res = await fetch(`/api/admin/pending-changes/${changeId}/reject`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ verifierEmail: verifierEmailInput.toLowerCase().trim() })
+        headers: { 
+          "Content-Type": "application/json",
+          "X-Admin-Email": token ? token.split("|")[0] : "",
+          "Authorization": token ? `Bearer ${token}` : ""
+        }
       });
       if (res.ok) {
         setSaveStatus("Pending change REJECTED and removed.");
-        setVerifierEmailInput("");
         loadAdminData();
         setTimeout(() => setSaveStatus(null), 3000);
       } else {
@@ -717,50 +877,52 @@ export default function Admin() {
               <Lock className="h-6 w-6" />
             </div>
             <h1 className="text-2xl font-black uppercase tracking-tight italic text-slate-900">SYSTEMS <span className="text-blue-600">CONSOLE</span></h1>
-            <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1.5">Divo Technologies B2B Portal</p>
+            <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1.5">Corporate Portal Gatekeeper</p>
           </div>
 
-          <form onSubmit={handleLogin} className="space-y-5">
-            <div>
-              <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest block mb-1.5">Corporate Email Address</label>
-              <input 
-                type="email" 
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="representative@divotech.in"
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3.5 px-4 focus:ring-2 focus:ring-blue-500 outline-none transition-all font-semibold text-xs text-slate-800"
-                required
-              />
-              <p className="text-[9px] text-slate-400 mt-1">Must be an authorized email ending in <strong className="text-slate-600">@divotech.in</strong></p>
+          {authSuccessMessage && (
+            <div className="bg-emerald-50 text-emerald-800 text-xs font-semibold p-4 rounded-xl flex items-start gap-2 border border-emerald-100 mb-6 leading-relaxed">
+              <Check className="h-4 w-4 shrink-0 mt-0.5" />
+              <span>{authSuccessMessage}</span>
+            </div>
+          )}
+
+          {loginError && (
+            <div className="bg-rose-50 text-rose-700 text-xs font-semibold p-4 rounded-xl flex items-start gap-2 border border-rose-100 mb-6 leading-relaxed">
+              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+              <span>{loginError}</span>
+            </div>
+          )}
+
+          <div className="space-y-6">
+            <div className="p-5 bg-slate-900 border border-slate-800 rounded-2xl text-[11px] text-slate-300 leading-relaxed shadow-lg">
+              <p className="mb-2.5 uppercase tracking-widest text-[9px] text-rose-500 font-extrabold flex items-center gap-1.5">
+                <Lock className="h-3.5 w-3.5 text-rose-500 shrink-0 animate-pulse" /> RESTRICTED SYSTEMS ENCLAVE
+              </p>
+              Administrative privileges are strictly restricted to verified corporate networks. Authentication requires real-time cryptographic signature verification of a Google Workspace security key associated with a verified <code className="bg-slate-800 px-1 py-0.5 rounded font-mono font-bold text-sky-400">@divotech.in</code> identity.
             </div>
 
-            <div>
-              <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest block mb-1.5">Administrator Passkey</label>
-              <input 
-                type="password" 
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••••••••"
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3.5 px-4 focus:ring-2 focus:ring-blue-500 outline-none transition-all font-mono text-center text-base text-slate-800"
-                required
-              />
-              <p className="text-[9px] text-slate-400 mt-1 text-center">Use password <code className="bg-slate-100 px-1 py-0.5 rounded font-bold text-slate-600 font-mono">divotech2026</code> for testing</p>
-            </div>
-
-            {loginError && (
-              <div className="bg-rose-50 text-rose-700 text-xs font-semibold p-4 rounded-xl flex items-center gap-2 border border-rose-100">
-                <AlertCircle className="h-4 w-4 shrink-0" />
-                <span>{loginError}</span>
+            {loading ? (
+              <div className="flex flex-col items-center justify-center p-8 bg-slate-50 border border-slate-100 rounded-2xl gap-3">
+                <RefreshCw className="h-6 w-6 animate-spin text-blue-600" />
+                <span className="text-[10px] text-slate-500 font-extrabold uppercase tracking-widest">Validating Cryptographic Session...</span>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center bg-slate-50 border border-slate-200 p-6 rounded-2xl shadow-inner min-h-[85px] relative">
+                <div id="google-button-div" className="w-full flex justify-center"></div>
+                {!(import.meta as any).env.VITE_GOOGLE_CLIENT_ID && (
+                  <div className="mt-4 p-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl text-[10px] font-semibold text-center leading-normal">
+                    ⚠️ <strong>Development Mode:</strong> Set <code className="bg-amber-100/70 px-1.5 py-0.2 rounded font-mono font-bold">VITE_GOOGLE_CLIENT_ID</code> in AI Studio settings to enable secure live SSO sign-in.
+                  </div>
+                )}
               </div>
             )}
+            
+            <p className="text-[9.5px] text-slate-400 text-center font-medium leading-normal">
+              Continuous session auditing and telemetry logging are active. Authorized corporate workspace: <strong className="text-slate-600 font-bold">divotech.in</strong>
+            </p>
+          </div>
 
-            <button 
-              type="submit"
-              className="w-full h-14 bg-slate-900 text-white font-extrabold rounded-xl uppercase tracking-widest text-[11px] hover:bg-blue-600 transition-all cursor-pointer shadow-lg shadow-blue-500/5 flex items-center justify-center gap-2"
-            >
-              Sign In to Terminal &rarr;
-            </button>
-          </form>
         </motion.div>
       </div>
     );
@@ -1959,17 +2121,15 @@ export default function Admin() {
                     To comply with security and change audit controls, any configuration update (products, categories, applications) must be verified by a secondary administrator with an authorized <code className="bg-slate-100 px-1 text-slate-700 font-mono">@divotech.in</code> domain. The submitting editor cannot verify their own changes.
                   </p>
 
-                  <div className="bg-slate-50 rounded-2xl p-6 border border-slate-200 mb-8 max-w-xl">
-                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">Verifier Identity Check (Enter Email To Approve/Reject)</label>
-                    <input 
-                      type="email"
-                      required
-                      placeholder="approver@divotech.in"
-                      value={verifierEmailInput}
-                      onChange={(e) => setVerifierEmailInput(e.target.value)}
-                      className="w-full bg-white border border-slate-200 rounded-xl py-3 px-4 focus:ring-2 focus:ring-amber-500 outline-none transition-all font-semibold font-mono text-xs text-slate-800"
-                    />
-                    <p className="text-[9px] text-amber-700 mt-1.5 font-bold">Must be a different @divotech.in account than the original creator.</p>
+                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 mb-8 max-w-xl flex items-center gap-4">
+                    <div className="h-10 w-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                      <Users className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Active Authorized Verifier</h4>
+                      <p className="text-sm font-black font-mono text-blue-600 mt-0.5">{token ? token.split("|")[0] : "unauthenticated"}</p>
+                      <p className="text-[10px] text-slate-400 mt-1">Identity verified securely via corporate systems authentication token.</p>
+                    </div>
                   </div>
 
                   {verificationError && (
