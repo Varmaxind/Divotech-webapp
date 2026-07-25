@@ -68,7 +68,7 @@ export default function CustomProjects() {
                 { title: "Modular X-Ray Rack", status: "Ongoing Program", desc: "Multi-channel kV system for high-throughput airport security scanners with Ethernet redundancy." }
               ].map((caseStudy, i) => (
                 <div key={i} className="group relative rounded-3xl overflow-hidden aspect-video bg-slate-900">
-                   <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-159742324403d-ef1dd7d6da10?auto=format&fit=crop&q=80&w=1200')] bg-cover bg-center opacity-30 grayscale group-hover:scale-105 transition-transform duration-700"></div>
+                   <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&q=80&w=1200')] bg-cover bg-center opacity-30 grayscale group-hover:scale-105 transition-transform duration-700"></div>
                    <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-transparent to-transparent"></div>
                    <div className="absolute bottom-10 left-10 right-10">
                       <span className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">{caseStudy.status}</span>

@@ -65,7 +65,7 @@ const products = [
     description: "Bespoke high voltage engineering tailored for specific OEM requirements and mission-critical applications.",
     price: 0,
     currency: "INR",
-    image: "https://images.unsplash.com/photo-159742324403d-ef1dd7d6da10?auto=format&fit=crop&q=80&w=800",
+    image: "https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&q=80&w=800",
     features: ["Bespoke Mechanicals", "Flexible Control Logic", "Expert Consultation", "Rapid Prototyping"]
   }
 ];
@@ -92,14 +92,20 @@ app.post("/api/contact", (req, res) => {
 
 app.post("/api/ai/consult", async (req, res) => {
   if (!genAI) {
-    return res.status(503).json({ error: "AI service not available" });
+    res.status(503).json({ error: "AI service not available. Please set GEMINI_API_KEY." });
+    return;
   }
-  
+
+  const { prompt, history } = req.body;
+
+  if (!prompt || typeof prompt !== "string") {
+    res.status(400).json({ error: "Missing or invalid prompt" });
+    return;
+  }
+
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-    const { prompt, history } = req.body;
-    
-    const chat = model.startChat({
+    const chat = genAI.chats.create({
+      model: "gemini-2.0-flash",
       history: [
         {
           role: "user",
@@ -109,13 +115,12 @@ app.post("/api/ai/consult", async (req, res) => {
           role: "model",
           parts: [{ text: "Greetings. I am your Divotech technical consultant. How can we assist with your precision high voltage requirements today? We offer solutions up to 150kV with Indian manufacturing excellence." }],
         },
-        ...(history || [])
-      ]
+        ...(Array.isArray(history) ? history : []),
+      ],
     });
-    
-    const result = await chat.sendMessage(prompt);
-    const response = await result.response;
-    res.json({ text: response.text() });
+
+    const result = await chat.sendMessage({ message: prompt });
+    res.json({ text: result.text });
   } catch (error) {
     console.error("AI Consultation Error:", error);
     res.status(500).json({ error: "Failed to process AI consultation" });
