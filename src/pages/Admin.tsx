@@ -91,17 +91,9 @@ const APPLICATION_SECTIONS = [
 ];
 
 export default function Admin() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [token, setToken] = useState<string | null>(localStorage.getItem("admin_token"));
   const [loginError, setLoginError] = useState("");
   const [activeTab, setActiveTab] = useState<"inquiries" | "products" | "cms" | "models" | "applications" | "verification">("inquiries");
-  
-  // Custom Secure Admin Authentication States
-  const [authMode, setAuthMode] = useState<"login" | "register" | "verify">("login");
-  const [verificationCodeInput, setVerificationCodeInput] = useState("");
-  const [demoVerificationCode, setDemoVerificationCode] = useState<string | null>(null);
-  const [authSuccessMessage, setAuthSuccessMessage] = useState("");
 
   // Data State
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
@@ -132,7 +124,6 @@ export default function Admin() {
     const handleCredentialResponse = async (response: any) => {
       setLoading(true);
       setLoginError("");
-      setAuthSuccessMessage("");
       try {
         const res = await fetch("/api/admin/google-sso", {
           method: "POST",
@@ -257,7 +248,6 @@ export default function Admin() {
         fetch("/api/products").then(r => r.json()),
         fetch("/api/admin/inquiries", {
           headers: { 
-            "X-Admin-Email": token ? token.split("|")[0] : "",
             "Authorization": token ? `Bearer ${token}` : ""
           }
         }).then(r => {
@@ -273,7 +263,6 @@ export default function Admin() {
         fetch("/api/applications").then(r => r.json()),
         fetch("/api/admin/pending-changes", {
           headers: { 
-            "X-Admin-Email": token ? token.split("|")[0] : "",
             "Authorization": token ? `Bearer ${token}` : ""
           }
         }).then(r => {
@@ -317,114 +306,19 @@ export default function Admin() {
     }
   }, [token]);
 
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoginError("");
-    setAuthSuccessMessage("");
-    setDemoVerificationCode(null);
-
-    const trimmedEmail = email.toLowerCase().trim();
-    if (!trimmedEmail.endsWith("@divotech.in")) {
-      setLoginError("Access Denied: Only verified corporate domains ending in @divotech.in are authorized to register administrator systems.");
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const res = await fetch("/api/admin/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: trimmedEmail, password })
-      });
-
-      const data = await res.json();
-      if (res.ok) {
-        setAuthMode("verify");
-        setAuthSuccessMessage("An administrative security passkey has been generated! Check the system mail server gateway log.");
-        if (data._demoVerificationCode) {
-          setDemoVerificationCode(data._demoVerificationCode);
-        }
-      } else {
-        setLoginError(data.error || "System registration failed. Please contact IT compliance.");
-      }
-    } catch {
-      setLoginError("Network connection error. Back-end security services are currently unresponsive.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleVerifyCode = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoginError("");
-    setAuthSuccessMessage("");
-
-    setLoading(true);
-    try {
-      const res = await fetch("/api/admin/verify-code", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.toLowerCase().trim(), code: verificationCodeInput.trim() })
-      });
-
-      const data = await res.json();
-      if (res.ok) {
-        setAuthMode("login");
-        setAuthSuccessMessage("Corporate email verified successfully! Your system administrator account is active. Please login below.");
-        setVerificationCodeInput("");
-        setDemoVerificationCode(null);
-      } else {
-        setLoginError(data.error || "Multi-factor authentication code is invalid.");
-      }
-    } catch {
-      setLoginError("Network connection error during verification dispatch.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoginError("");
-    setAuthSuccessMessage("");
-    
-    const trimmedEmail = email.toLowerCase().trim();
-    if (!trimmedEmail.endsWith("@divotech.in")) {
-      setLoginError("Access Denied: Administrative console access is strictly limited to authorized @divotech.in corporate addresses.");
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const res = await fetch("/api/admin/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: trimmedEmail, password })
-      });
-
-      const data = await res.json();
-      if (res.ok) {
-        localStorage.setItem("admin_token", data.token);
-        setToken(data.token);
-        setSaveStatus(data.message || "Administrative console session verified successfully.");
-        setTimeout(() => setSaveStatus(null), 3000);
-      } else {
-        setLoginError(data.error || "Access Denied: Invalid credentials or unverified address.");
-      }
-    } catch {
-      setLoginError("Could not connect to back-end administration gateway.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleLogout = () => {
+    // Invalidate the session server-side too, not just locally, so the
+    // token can't be replayed after logout.
+    if (token) {
+      fetch("/api/admin/logout", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` }
+      }).catch(() => {});
+    }
     localStorage.removeItem("admin_token");
     setToken(null);
     setSelectedInquiry(null);
-    setAuthSuccessMessage("");
     setLoginError("");
-    setDemoVerificationCode(null);
   };
 
   // Create Product Submit
@@ -478,7 +372,6 @@ export default function Admin() {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
-          "X-Admin-Email": token ? token.split("|")[0] : "",
           "Authorization": token ? `Bearer ${token}` : ""
         },
         body: JSON.stringify(payload)
@@ -536,7 +429,6 @@ export default function Admin() {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
-          "X-Admin-Email": token ? token.split("|")[0] : "",
           "Authorization": token ? `Bearer ${token}` : ""
         },
         body: JSON.stringify(payload)
@@ -572,7 +464,6 @@ export default function Admin() {
       const res = await fetch(`/api/admin/models/${id}`, { 
         method: "DELETE",
         headers: { 
-          "X-Admin-Email": token ? token.split("|")[0] : "",
           "Authorization": token ? `Bearer ${token}` : ""
         }
       });
@@ -598,7 +489,6 @@ export default function Admin() {
       const res = await fetch(`/api/admin/products/${id}`, {
         method: "DELETE",
         headers: { 
-          "X-Admin-Email": token ? token.split("|")[0] : "",
           "Authorization": token ? `Bearer ${token}` : ""
         }
       });
@@ -626,7 +516,6 @@ export default function Admin() {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
-          "X-Admin-Email": token ? token.split("|")[0] : "",
           "Authorization": token ? `Bearer ${token}` : ""
         },
         body: JSON.stringify(cms)
@@ -667,7 +556,6 @@ export default function Admin() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Admin-Email": token ? token.split("|")[0] : "",
           "Authorization": token ? `Bearer ${token}` : ""
         },
         body: JSON.stringify(payload)
@@ -708,7 +596,6 @@ export default function Admin() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Admin-Email": token ? token.split("|")[0] : "",
           "Authorization": token ? `Bearer ${token}` : ""
         },
         body: JSON.stringify(payload)
@@ -733,7 +620,6 @@ export default function Admin() {
       const res = await fetch(`/api/admin/applications/${id}`, {
         method: "DELETE",
         headers: { 
-          "X-Admin-Email": token ? token.split("|")[0] : "",
           "Authorization": token ? `Bearer ${token}` : ""
         }
       });
@@ -760,7 +646,6 @@ export default function Admin() {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
-          "X-Admin-Email": token ? token.split("|")[0] : "",
           "Authorization": token ? `Bearer ${token}` : ""
         }
       });
@@ -788,7 +673,6 @@ export default function Admin() {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
-          "X-Admin-Email": token ? token.split("|")[0] : "",
           "Authorization": token ? `Bearer ${token}` : ""
         }
       });
@@ -879,13 +763,6 @@ export default function Admin() {
             <h1 className="text-2xl font-black uppercase tracking-tight italic text-slate-900">SYSTEMS <span className="text-blue-600">CONSOLE</span></h1>
             <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1.5">Corporate Portal Gatekeeper</p>
           </div>
-
-          {authSuccessMessage && (
-            <div className="bg-emerald-50 text-emerald-800 text-xs font-semibold p-4 rounded-xl flex items-start gap-2 border border-emerald-100 mb-6 leading-relaxed">
-              <Check className="h-4 w-4 shrink-0 mt-0.5" />
-              <span>{authSuccessMessage}</span>
-            </div>
-          )}
 
           {loginError && (
             <div className="bg-rose-50 text-rose-700 text-xs font-semibold p-4 rounded-xl flex items-start gap-2 border border-rose-100 mb-6 leading-relaxed">

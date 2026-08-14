@@ -1,8 +1,12 @@
 import fs from "fs";
 import path from "path";
+import crypto from "crypto";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const DB_FILE = path.join(DATA_DIR, "db.json");
+
+// Admin sessions expire after 12 hours of issuance
+const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 
 export interface Product {
   id: string;
@@ -88,6 +92,16 @@ export interface User {
   verificationCode?: string;
   verificationCodeExpires?: string;
   createdAt: string;
+}
+
+// A server-side record of an issued admin session. The opaque `token` is the
+// only thing handed to the client — it is meaningless without a matching,
+// unexpired entry here, so it cannot be forged by constructing a string.
+export interface Session {
+  token: string;
+  email: string;
+  createdAt: string;
+  expiresAt: string;
 }
 
 // Ensure database file and directory exist
@@ -400,6 +414,10 @@ function getDB() {
     cachedData.users = [];
     dirty = true;
   }
+  if (!cachedData.sessions) {
+    cachedData.sessions = [];
+    dirty = true;
+  }
   if (!cachedData.models) {
     cachedData.models = [
       { id: "regulated-dc", name: "High Voltage Regulated DC Power Supplies", applications: ["Industrial Processes", "Vacuum & Plasma", "Analytical Instrumentation", "Inspection & Test Equipment", "Semiconductor Fabrication", "Research & Academia"] },
@@ -620,5 +638,42 @@ export const db = {
     }
     saveDB(data);
     return user;
+  },
+
+  // Sessions: created only after a real Google ID token has been verified
+  // server-side (see /api/admin/google-sso). The token is an unguessable
+  // random value — nothing about its contents implies who it belongs to.
+  createSession: (email: string): Session => {
+    const data = getDB();
+    if (!data.sessions) data.sessions = [];
+    const session: Session = {
+      token: crypto.randomBytes(32).toString("hex"),
+      email: email.toLowerCase().trim(),
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + SESSION_TTL_MS).toISOString()
+    };
+    data.sessions.push(session);
+    saveDB(data);
+    return session;
+  },
+  getSession: (token: string): Session | null => {
+    if (!token) return null;
+    const data = getDB();
+    if (!data.sessions) return null;
+    const session = data.sessions.find((s: Session) => s.token === token);
+    if (!session) return null;
+    if (session.expiresAt < new Date().toISOString()) {
+      // Expired — clean it up so it can never be reused
+      data.sessions = data.sessions.filter((s: Session) => s.token !== token);
+      saveDB(data);
+      return null;
+    }
+    return session;
+  },
+  deleteSession: (token: string): void => {
+    const data = getDB();
+    if (!data.sessions || !token) return;
+    data.sessions = data.sessions.filter((s: Session) => s.token !== token);
+    saveDB(data);
   }
 };
