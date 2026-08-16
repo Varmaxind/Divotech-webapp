@@ -401,8 +401,23 @@ app.get("/api/admin/pending-changes", (req, res) => {
   }
   // Only changes still awaiting a decision belong in the queue — already
   // approved/rejected ones would otherwise sit here forever since they're
-  // never deleted from storage (kept for audit history).
+  // never deleted from storage (kept for audit history, see /history below).
   res.json(db.getPendingChanges().filter(c => c.status === "pending"));
+});
+
+// Admin: recent maker-checker decision history, so a submitter can confirm
+// whether their change was actually approved/rejected (and by whom) once it
+// leaves the pending queue.
+app.get("/api/admin/pending-changes/history", (req, res) => {
+  const email = getAuthenticatedAdmin(req);
+  if (!email) {
+    return res.status(401).json({ error: "Access Denied: Unauthenticated or invalid administrative session." });
+  }
+  const history = db.getPendingChanges()
+    .filter(c => c.status !== "pending")
+    .sort((a, b) => new Date(b.verifiedAt || b.createdAt).getTime() - new Date(a.verifiedAt || a.createdAt).getTime())
+    .slice(0, 25);
+  res.json(history);
 });
 
 app.post("/api/admin/pending-changes/:id/approve", (req, res) => {

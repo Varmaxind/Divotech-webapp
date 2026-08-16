@@ -107,6 +107,7 @@ export default function Admin() {
   const [models, setModels] = useState<Model[]>([]);
   const [applications, setApplications] = useState<ApplicationSection[]>([]);
   const [pendingChanges, setPendingChanges] = useState<PendingChange[]>([]);
+  const [changeHistory, setChangeHistory] = useState<PendingChange[]>([]);
   const [cms, setCms] = useState<CMSData | null>(null);
   
   // Verification dialog states
@@ -252,10 +253,10 @@ export default function Admin() {
     if (!token) return;
     setLoading(true);
     try {
-      const [productsRes, inquiriesRes, cmsRes, modelsRes, appsRes, pendingRes] = await Promise.all([
+      const [productsRes, inquiriesRes, cmsRes, modelsRes, appsRes, pendingRes, historyRes] = await Promise.all([
         fetch("/api/products").then(r => r.json()),
         fetch("/api/admin/inquiries", {
-          headers: { 
+          headers: {
             "Authorization": token ? `Bearer ${token}` : ""
           }
         }).then(r => {
@@ -270,7 +271,17 @@ export default function Admin() {
         fetch("/api/models").then(r => r.json()),
         fetch("/api/applications").then(r => r.json()),
         fetch("/api/admin/pending-changes", {
-          headers: { 
+          headers: {
+            "Authorization": token ? `Bearer ${token}` : ""
+          }
+        }).then(r => {
+          if (r.status === 401) {
+            return [];
+          }
+          return r.json();
+        }),
+        fetch("/api/admin/pending-changes/history", {
+          headers: {
             "Authorization": token ? `Bearer ${token}` : ""
           }
         }).then(r => {
@@ -287,6 +298,7 @@ export default function Admin() {
       setModels(modelsRes);
       setApplications(appsRes);
       setPendingChanges(pendingRes || []);
+      setChangeHistory(historyRes || []);
 
       // Pre-select first category and its applications if category is currently empty
       if (modelsRes && modelsRes.length > 0) {
@@ -2038,7 +2050,12 @@ export default function Admin() {
                         const action = change.type.startsWith("delete_") ? "DELETE" : change.type.startsWith("create_") ? "CREATE" : "UPDATE";
                         const isOwnChange = !!adminEmail && change.submittedBy?.toLowerCase().trim() === adminEmail.toLowerCase().trim();
                         return (
-                        <div key={change.id} className="border border-slate-200 rounded-2xl bg-slate-50 overflow-hidden hover:border-slate-300 transition-colors">
+                        <div key={change.id} className={`border rounded-2xl overflow-hidden transition-colors ${isOwnChange ? "border-blue-200 bg-blue-50/40" : "border-slate-200 bg-slate-50 hover:border-slate-300"}`}>
+                          {isOwnChange && (
+                            <div className="px-5 py-3 bg-blue-600 text-white text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
+                              <Lock className="h-3.5 w-3.5 shrink-0" /> Awaiting another admin — you submitted this change, so you can't approve or reject it yourself
+                            </div>
+                          )}
                           <div className="p-5 border-b border-slate-200 bg-white flex flex-wrap items-center justify-between gap-4">
                             <div>
                               <div className="flex items-center gap-2">
@@ -2069,11 +2086,11 @@ export default function Admin() {
                             {isOwnChange ? (
                               <div className="flex items-center justify-end gap-2 pt-2">
                                 <span className="px-4 py-2.5 bg-slate-100 text-slate-500 border border-slate-200 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center gap-2">
-                                  <Lock className="h-3.5 w-3.5 shrink-0" /> You submitted this — a different @divotech.in admin must verify it
+                                  <Lock className="h-3.5 w-3.5 shrink-0" /> Waiting on a different verifier
                                 </span>
                               </div>
                             ) : (
-                            <div className="flex justify-end gap-3 pt-2">
+                            <div className="flex flex-wrap justify-end gap-3 pt-2">
                               <button
                                 onClick={() => handleRejectChange(change.id)}
                                 className="px-5 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer"
@@ -2092,6 +2109,51 @@ export default function Admin() {
                         </div>
                         );
                       })}
+                    </div>
+                  )}
+                </div>
+
+                {/* RECENTLY DECIDED (audit trail — confirms whether a submitted change was actually approved/rejected, and by whom) */}
+                <div className="bg-white border border-slate-200 rounded-[2rem] p-8 lg:p-10 shadow-sm">
+                  <h3 className="text-lg font-black uppercase tracking-tight italic text-slate-900 mb-1">Recently <span className="text-blue-600">Decided</span></h3>
+                  <p className="text-slate-500 text-xs leading-relaxed mb-6 font-semibold">
+                    The last 25 changes that left the queue, so submitters can confirm whether their change went live and who verified it.
+                  </p>
+
+                  {changeHistory.length === 0 ? (
+                    <div className="border border-dashed border-slate-200 rounded-2xl p-10 text-center bg-slate-50/50">
+                      <p className="text-slate-400 text-xs font-semibold">No changes have been approved or rejected yet.</p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs border-collapse font-sans">
+                        <thead>
+                          <tr className="border-b border-slate-200 text-slate-400 uppercase font-bold tracking-wider">
+                            <th className="py-3 px-3">Target</th>
+                            <th className="py-3 px-3">Type</th>
+                            <th className="py-3 px-3">Submitted By</th>
+                            <th className="py-3 px-3">Status</th>
+                            <th className="py-3 px-3">Verified By</th>
+                            <th className="py-3 px-3">Decided At</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 font-medium">
+                          {changeHistory.map(change => (
+                            <tr key={change.id}>
+                              <td className="py-3 px-3 font-bold text-slate-800">{change.targetName || change.targetId}</td>
+                              <td className="py-3 px-3 font-mono text-[10px] text-slate-500">{change.type}</td>
+                              <td className="py-3 px-3 text-slate-600">{change.submittedBy}</td>
+                              <td className="py-3 px-3">
+                                <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-widest border ${change.status === "approved" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-rose-50 text-rose-700 border-rose-200"}`}>
+                                  {change.status}
+                                </span>
+                              </td>
+                              <td className="py-3 px-3 text-slate-600">{change.verifiedBy || "—"}</td>
+                              <td className="py-3 px-3 text-slate-400 font-mono text-[10px]">{change.verifiedAt ? new Date(change.verifiedAt).toLocaleString("en-IN") : "—"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   )}
                 </div>
