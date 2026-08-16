@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: divotech-webapp
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Set actual values for these in the Render dashboard (Environment tab) —
+      # they're marked sync: false so they aren't stored in this file / git.
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: VITE_GOOGLE_CLIENT_ID
+        sync: false
+    # Data (products, CMS content, inquiries, admin sessions) is stored in
+    # data/db.json on local disk. Render's free plan has no persistent disk,
+    # so that file resets on every deploy/restart. Upgrade to a paid instance
+    # and uncomment this block to keep data across deploys:
+    # disk:
+    #   name: divotech-data
+    #   mountPath: /opt/render/project/src/data
+    #   sizeGB: 1

@@ -8,7 +8,10 @@ import { OAuth2Client } from "google-auth-library";
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+// Most Node hosts (Render, Railway, Fly.io, Heroku, ...) assign a port
+// dynamically via the PORT env var and route external traffic to it —
+// binding to a hardcoded port means the platform can never reach the app.
+const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 
 import { db } from "./server-db";
 
