@@ -59,11 +59,14 @@ interface ApplicationSection {
 interface PendingChange {
   id: string;
   type: string;
-  action: string;
   targetId: string;
-  data: any;
-  createdBy: string;
+  targetName: string;
+  payload: any;
+  submittedBy: string;
   createdAt: string;
+  status: "pending" | "approved" | "rejected";
+  verifiedBy?: string;
+  verifiedAt?: string;
 }
 
 interface CMSData {
@@ -92,6 +95,9 @@ const APPLICATION_SECTIONS = [
 
 export default function Admin() {
   const [token, setToken] = useState<string | null>(localStorage.getItem("admin_token"));
+  // The token itself is an opaque session id (no identity embedded in it),
+  // so the signed-in admin's email is tracked separately.
+  const [adminEmail, setAdminEmail] = useState<string | null>(localStorage.getItem("admin_email"));
   const [loginError, setLoginError] = useState("");
   const [activeTab, setActiveTab] = useState<"inquiries" | "products" | "cms" | "models" | "applications" | "verification">("inquiries");
 
@@ -133,7 +139,9 @@ export default function Admin() {
         const data = await res.json();
         if (res.ok) {
           localStorage.setItem("admin_token", data.token);
+          localStorage.setItem("admin_email", data.email);
           setToken(data.token);
+          setAdminEmail(data.email);
           setSaveStatus(`Welcome back, ${data.email}! Corporate access granted.`);
           setTimeout(() => setSaveStatus(null), 3500);
         } else {
@@ -316,7 +324,9 @@ export default function Admin() {
       }).catch(() => {});
     }
     localStorage.removeItem("admin_token");
+    localStorage.removeItem("admin_email");
     setToken(null);
+    setAdminEmail(null);
     setSelectedInquiry(null);
     setLoginError("");
   };
@@ -2004,7 +2014,7 @@ export default function Admin() {
                     </div>
                     <div>
                       <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Active Authorized Verifier</h4>
-                      <p className="text-sm font-black font-mono text-blue-600 mt-0.5">{token ? token.split("|")[0] : "unauthenticated"}</p>
+                      <p className="text-sm font-black font-mono text-blue-600 mt-0.5">{adminEmail || "unauthenticated"}</p>
                       <p className="text-[10px] text-slate-400 mt-1">Identity verified securely via corporate systems authentication token.</p>
                     </div>
                   </div>
@@ -2024,23 +2034,26 @@ export default function Admin() {
                     </div>
                   ) : (
                     <div className="space-y-6">
-                      {pendingChanges.map((change) => (
+                      {pendingChanges.map((change) => {
+                        const action = change.type.startsWith("delete_") ? "DELETE" : change.type.startsWith("create_") ? "CREATE" : "UPDATE";
+                        const isOwnChange = !!adminEmail && change.submittedBy?.toLowerCase().trim() === adminEmail.toLowerCase().trim();
+                        return (
                         <div key={change.id} className="border border-slate-200 rounded-2xl bg-slate-50 overflow-hidden hover:border-slate-300 transition-colors">
                           <div className="p-5 border-b border-slate-200 bg-white flex flex-wrap items-center justify-between gap-4">
                             <div>
                               <div className="flex items-center gap-2">
-                                <span className={`px-2.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest ${change.action === "DELETE" ? "bg-rose-100 text-rose-700 border border-rose-200" : "bg-blue-100 text-blue-700 border border-blue-200"}`}>
-                                  {change.action} Change Request
+                                <span className={`px-2.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest ${action === "DELETE" ? "bg-rose-100 text-rose-700 border border-rose-200" : "bg-blue-100 text-blue-700 border border-blue-200"}`}>
+                                  {action} Change Request
                                 </span>
                                 <span className="bg-slate-100 text-slate-500 text-[8px] font-bold px-2 py-0.5 rounded font-mono border border-slate-200">
                                   {change.type}
                                 </span>
                               </div>
-                              <h4 className="font-extrabold text-slate-800 mt-1.5 font-mono text-xs">Target Entity: <span className="text-slate-900 uppercase font-sans italic font-black">{change.targetId}</span></h4>
+                              <h4 className="font-extrabold text-slate-800 mt-1.5 font-mono text-xs">Target Entity: <span className="text-slate-900 uppercase font-sans italic font-black">{change.targetName || change.targetId}</span></h4>
                             </div>
 
                             <div className="text-right text-[10px] text-slate-400 font-semibold font-mono">
-                              <div>Created By: <span className="text-blue-600 font-bold">{change.createdBy}</span></div>
+                              <div>Submitted By: <span className="text-blue-600 font-bold">{change.submittedBy}</span></div>
                               <div className="text-[9px] mt-0.5">{new Date(change.createdAt).toLocaleString("en-IN")}</div>
                             </div>
                           </div>
@@ -2049,27 +2062,36 @@ export default function Admin() {
                             <div>
                               <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Inspected Metadata Payload</div>
                               <pre className="p-4 bg-slate-900 text-amber-400 rounded-xl text-[10px] font-mono leading-relaxed overflow-x-auto max-h-48 border border-slate-800">
-                                {JSON.stringify(change.data, null, 2)}
+                                {JSON.stringify(change.payload, null, 2)}
                               </pre>
                             </div>
 
+                            {isOwnChange ? (
+                              <div className="flex items-center justify-end gap-2 pt-2">
+                                <span className="px-4 py-2.5 bg-slate-100 text-slate-500 border border-slate-200 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center gap-2">
+                                  <Lock className="h-3.5 w-3.5 shrink-0" /> You submitted this — a different @divotech.in admin must verify it
+                                </span>
+                              </div>
+                            ) : (
                             <div className="flex justify-end gap-3 pt-2">
-                              <button 
+                              <button
                                 onClick={() => handleRejectChange(change.id)}
                                 className="px-5 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer"
                               >
                                 Reject & Trash
                               </button>
-                              <button 
+                              <button
                                 onClick={() => handleApproveChange(change.id)}
                                 className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white shadow-md shadow-amber-500/10 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5"
                               >
                                 <Check className="h-4 w-4" /> Approve & Deploy
                               </button>
                             </div>
+                            )}
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>

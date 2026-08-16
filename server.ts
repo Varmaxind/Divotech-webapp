@@ -399,7 +399,10 @@ app.get("/api/admin/pending-changes", (req, res) => {
   if (!email) {
     return res.status(401).json({ error: "Access Denied: Unauthenticated or invalid administrative session." });
   }
-  res.json(db.getPendingChanges());
+  // Only changes still awaiting a decision belong in the queue — already
+  // approved/rejected ones would otherwise sit here forever since they're
+  // never deleted from storage (kept for audit history).
+  res.json(db.getPendingChanges().filter(c => c.status === "pending"));
 });
 
 app.post("/api/admin/pending-changes/:id/approve", (req, res) => {
