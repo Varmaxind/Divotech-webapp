@@ -3,13 +3,15 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
-import crypto from "crypto";
 import { OAuth2Client } from "google-auth-library";
 
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+// Most Node hosts (Render, Railway, Fly.io, Heroku, ...) assign a port
+// dynamically via the PORT env var and route external traffic to it —
+// binding to a hardcoded port means the platform can never reach the app.
+const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 
 import { db } from "./server-db";
 
@@ -65,56 +67,24 @@ app.post("/api/contact", (req, res) => {
   });
 });
 
-// Helper to extract authenticated administrator email address from session token
+// Helper to extract the authenticated administrator's email from a session
+// token. The token itself carries no identity claims — it is only ever
+// meaningful when it matches a session record created by the server after a
+// real Google ID token was verified (see /api/admin/google-sso). This is the
+// single, exclusive path into admin access; nothing here trusts client input.
 function getAuthenticatedAdmin(req: express.Request): string | null {
-  const authHeader = req.headers["authorization"] || req.headers["x-admin-email"];
-  if (!authHeader) return null;
-  
-  let token = "";
-  if (typeof authHeader === "string") {
-    if (authHeader.startsWith("Bearer ")) {
-      token = authHeader.substring(7);
-    } else {
-      token = authHeader;
-    }
-  }
-  
-  if (!token) return null;
-  
-  const parts = token.split("|");
-  if (parts.length < 2) return null;
-  
-  const email = parts[0].toLowerCase().trim();
-  if (!email.endsWith("@divotech.in")) return null;
-  
-  // Verify authenticated via Google Workspace SSO or verified active token
-  if (parts[1] && parts[1].startsWith("google_auth_active")) {
-    const users = db.getUsers();
-    let user = users.find(u => u.email.toLowerCase().trim() === email);
-    if (!user) {
-      db.saveUser({
-        email,
-        passwordHash: "",
-        verified: true,
-        createdAt: new Date().toISOString()
-      });
-    } else if (!user.verified) {
-      user.verified = true;
-      db.saveUser(user);
-    }
-    return email;
-  }
-  
-  // Verify that the user exists and is fully verified in the local DB
-  const user = db.getUsers().find(u => u.email.toLowerCase().trim() === email && u.verified);
-  if (!user) return null;
-  
-  return email;
-}
+  const authHeader = req.headers["authorization"];
+  if (!authHeader || typeof authHeader !== "string") return null;
 
-// Helper to extract administrative email address (Strict Auth Check)
-function getAdminEmail(req: express.Request): string | null {
-  return getAuthenticatedAdmin(req);
+  const token = authHeader.startsWith("Bearer ") ? authHeader.substring(7) : authHeader;
+  if (!token) return null;
+
+  const session = db.getSession(token);
+  if (!session) return null;
+
+  if (!session.email.endsWith("@divotech.in")) return null;
+
+  return session.email;
 }
 
 // Google SSO Cryptographic Signature Verification Endpoint
@@ -177,13 +147,15 @@ app.post("/api/admin/google-sso", async (req, res) => {
       db.saveUser(user);
     }
 
-    // Generate secure session token
-    const sessionSecret = crypto.randomBytes(16).toString("hex");
-    const token = `${email}|google_auth_active_${sessionSecret}|${Date.now()}`;
+    // Issue a real, server-tracked session now that the Google ID token has
+    // been cryptographically verified above. The opaque token returned here
+    // is meaningless on its own — it only grants access because it matches
+    // this session record.
+    const session = db.createSession(email);
 
     res.json({
       success: true,
-      token,
+      token: session.token,
       email,
       message: "SSO cryptographic signature successfully verified. Secure corporate session initialized."
     });
@@ -195,136 +167,15 @@ app.post("/api/admin/google-sso", async (req, res) => {
   }
 });
 
-// Secure Admin Registration Route
-app.post("/api/admin/register", (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password) {
-    return res.status(400).json({ error: "Corporate email and administrative passkey are required." });
+// Admin logout: explicitly invalidates the session server-side so a token
+// can't keep working after "End Session" is clicked.
+app.post("/api/admin/logout", (req, res) => {
+  const authHeader = req.headers["authorization"];
+  if (typeof authHeader === "string") {
+    const token = authHeader.startsWith("Bearer ") ? authHeader.substring(7) : authHeader;
+    if (token) db.deleteSession(token);
   }
-
-  const normalizedEmail = email.toLowerCase().trim();
-  if (!normalizedEmail.endsWith("@divotech.in")) {
-    return res.status(403).json({ error: "Access Denied: Only verified @divotech.in corporate email domains are permitted to register systems administrator accounts." });
-  }
-
-  const users = db.getUsers();
-  const existingUser = users.find(u => u.email.toLowerCase().trim() === normalizedEmail);
-  if (existingUser && existingUser.verified) {
-    return res.status(400).json({ error: "An administrator account with this corporate email address is already registered." });
-  }
-
-  // Create hash for secure password storage
-  const passwordHash = crypto.createHash("sha256").update(password).digest("hex");
-  
-  // Generate a random secure 6-digit verification code
-  const code = Math.floor(100000 + Math.random() * 900000).toString();
-  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 minutes expiry
-
-  const newUser = {
-    email: normalizedEmail,
-    passwordHash,
-    verified: false,
-    verificationCode: code,
-    verificationCodeExpires: expiresAt,
-    createdAt: new Date().toISOString()
-  };
-
-  db.saveUser(newUser);
-
-  // Simulate dispatching email with verification code to the console
-  console.log(`\n================================================================`);
-  console.log(`DIVOTECH SECURE MAIL GATEWAY: VERIFICATION EMAIL`);
-  console.log(`To: ${normalizedEmail}`);
-  console.log(`Subject: Divotech Admin Console - Multi-Factor Verification Code`);
-  console.log(`Code: [ ${code} ]`);
-  console.log(`Expires: 10 minutes from now (${new Date(expiresAt).toLocaleTimeString()})`);
-  console.log(`================================================================\n`);
-
-  res.json({
-    success: true,
-    message: "A secure verification code has been dispatched to your corporate email."
-  });
-});
-
-// Secure Email Verification Route
-app.post("/api/admin/verify-code", (req, res) => {
-  const { email, code } = req.body;
-  if (!email || !code) {
-    return res.status(400).json({ error: "Email and verification code are required." });
-  }
-
-  const normalizedEmail = email.toLowerCase().trim();
-  const users = db.getUsers();
-  const user = users.find(u => u.email.toLowerCase().trim() === normalizedEmail);
-
-  if (!user) {
-    return res.status(404).json({ error: "No pending administrator account found for this email." });
-  }
-
-  if (user.verified) {
-    return res.json({ success: true, message: "Corporate email is already verified. Proceed to sign in." });
-  }
-
-  if (user.verificationCode !== code) {
-    return res.status(400).json({ error: "The verification code you entered is invalid." });
-  }
-
-  const now = new Date().toISOString();
-  if (user.verificationCodeExpires && user.verificationCodeExpires < now) {
-    return res.status(400).json({ error: "This verification code has expired. Please request a new registration code." });
-  }
-
-  // Mark user as fully verified
-  user.verified = true;
-  user.verificationCode = undefined;
-  user.verificationCodeExpires = undefined;
-
-  db.saveUser(user);
-
-  res.json({
-    success: true,
-    message: "Corporate email verification complete! Your administrator account has been activated."
-  });
-});
-
-// Secure Admin Login Route
-app.post("/api/admin/login", (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password) {
-    return res.status(400).json({ error: "Corporate email and password are required." });
-  }
-
-  const normalizedEmail = email.toLowerCase().trim();
-  if (!normalizedEmail.endsWith("@divotech.in")) {
-    return res.status(403).json({ error: "Access Denied: Only @divotech.in corporate email addresses are permitted for administrative systems access." });
-  }
-
-  const users = db.getUsers();
-  const user = users.find(u => u.email.toLowerCase().trim() === normalizedEmail);
-
-  if (!user) {
-    return res.status(401).json({ error: "Invalid corporate email or administrative credentials." });
-  }
-
-  if (!user.verified) {
-    return res.status(403).json({ error: "Your corporate email is not verified yet. Please enter the verification code to activate your account." });
-  }
-
-  // Compare secure password hashes
-  const hash = crypto.createHash("sha256").update(password).digest("hex");
-  if (user.passwordHash !== hash) {
-    return res.status(401).json({ error: "Invalid corporate email or administrative credentials." });
-  }
-
-  // Generate a cryptographically secure session token format
-  const sessionSecret = crypto.randomBytes(16).toString("hex");
-  const token = `${normalizedEmail}|${sessionSecret}|${Date.now()}`;
-
-  res.json({ 
-    success: true, 
-    token,
-    email: normalizedEmail
-  });
+  res.json({ success: true });
 });
 
 // Admin: Get Contacts
@@ -548,7 +399,25 @@ app.get("/api/admin/pending-changes", (req, res) => {
   if (!email) {
     return res.status(401).json({ error: "Access Denied: Unauthenticated or invalid administrative session." });
   }
-  res.json(db.getPendingChanges());
+  // Only changes still awaiting a decision belong in the queue — already
+  // approved/rejected ones would otherwise sit here forever since they're
+  // never deleted from storage (kept for audit history, see /history below).
+  res.json(db.getPendingChanges().filter(c => c.status === "pending"));
+});
+
+// Admin: recent maker-checker decision history, so a submitter can confirm
+// whether their change was actually approved/rejected (and by whom) once it
+// leaves the pending queue.
+app.get("/api/admin/pending-changes/history", (req, res) => {
+  const email = getAuthenticatedAdmin(req);
+  if (!email) {
+    return res.status(401).json({ error: "Access Denied: Unauthenticated or invalid administrative session." });
+  }
+  const history = db.getPendingChanges()
+    .filter(c => c.status !== "pending")
+    .sort((a, b) => new Date(b.verifiedAt || b.createdAt).getTime() - new Date(a.verifiedAt || a.createdAt).getTime())
+    .slice(0, 25);
+  res.json(history);
 });
 
 app.post("/api/admin/pending-changes/:id/approve", (req, res) => {
