@@ -93,6 +93,35 @@ const APPLICATION_SECTIONS = [
   "Research & Academia"
 ];
 
+// A true overlay modal: dims/blurs the page behind it, closes on Escape or a
+// backdrop click, and never lets the underlying page scroll. Used for both
+// the inquiry detail panel and the styled confirm dialog below.
+function ModalOverlay({ onClose, children, maxWidthClass = "max-w-2xl" }: { onClose: () => void; children: React.ReactNode; maxWidthClass?: string }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div className={`w-full ${maxWidthClass} max-h-[90vh] overflow-y-auto`} onClick={(e) => e.stopPropagation()}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 export default function Admin() {
   const [token, setToken] = useState<string | null>(localStorage.getItem("admin_token"));
   // The token itself is an opaque session id (no identity embedded in it),
@@ -117,7 +146,18 @@ export default function Admin() {
   // UI Loading / Feedback State
   const [loading, setLoading] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const [uiError, setUiError] = useState<string | null>(null);
   const [selectedInquiry, setSelectedInquiry] = useState<Inquiry | null>(null);
+
+  // Styled stand-in for window.confirm() — set this to open the dialog, its
+  // onConfirm runs if the admin accepts, and it self-closes either way.
+  const [confirmDialog, setConfirmDialog] = useState<{
+    title: string;
+    message: string;
+    confirmLabel: string;
+    danger?: boolean;
+    onConfirm: () => void;
+  } | null>(null);
 
   // Editing Mode States
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
@@ -346,8 +386,9 @@ export default function Admin() {
   // Create Product Submit
   const handleCreateProduct = async (e: React.FormEvent) => {
     e.preventDefault();
+    setUiError(null);
     if (!newProd.id || !newProd.name) {
-      alert("ID and Name are mandatory parameter settings.");
+      setUiError("ID and Name are mandatory parameter settings.");
       return;
     }
 
@@ -424,10 +465,10 @@ export default function Admin() {
         loadAdminData();
         setTimeout(() => setSaveStatus(null), 3500);
       } else {
-        alert("Failed to submit system settings");
+        setUiError("Failed to submit system settings");
       }
     } catch {
-      alert("Error saving modular product.");
+      setUiError("Error saving modular product.");
     } finally {
       setLoading(false);
     }
@@ -436,8 +477,9 @@ export default function Admin() {
   // Add Category Model Handler
   const handleCreateModel = async (e: React.FormEvent) => {
     e.preventDefault();
+    setUiError(null);
     if (!newModel.id || !newModel.name) {
-      alert("ID and Name are required.");
+      setUiError("ID and Name are required.");
       return;
     }
     const payload = {
@@ -462,30 +504,37 @@ export default function Admin() {
         loadAdminData();
         setTimeout(() => setSaveStatus(null), 3500);
       } else {
-        alert("Failed to save category model.");
+        setUiError("Failed to save category model.");
       }
     } catch {
-      alert("Error saving category model.");
+      setUiError("Error saving category model.");
     } finally {
       setLoading(false);
     }
   };
 
-  // Delete Category Model Handler
-  const handleDeleteModel = async (id: string) => {
+  // Delete Category Model Handler — opens the styled confirm dialog; the actual
+  // deletion only runs if the admin accepts it.
+  const handleDeleteModel = (id: string) => {
     const productsInModel = products.filter(p => p.category.toLowerCase() === id.toLowerCase() || p.category === id);
-    if (productsInModel.length > 0) {
-      if (!confirm(`Warning: There are ${productsInModel.length} products associated with this category model. Deleting it may leave them uncategorized. Proceed?`)) {
-        return;
-      }
-    } else {
-      if (!confirm(`Are you sure you want to delete category model "${id}"?`)) return;
-    }
+    setConfirmDialog({
+      title: "Delete Category Model",
+      message: productsInModel.length > 0
+        ? `Warning: there are ${productsInModel.length} product(s) associated with this category model. Deleting it may leave them uncategorized. Proceed?`
+        : `Are you sure you want to delete category model "${id}"?`,
+      confirmLabel: "Delete Model",
+      danger: true,
+      onConfirm: () => executeDeleteModel(id)
+    });
+  };
+
+  const executeDeleteModel = async (id: string) => {
+    setUiError(null);
     setLoading(true);
     try {
-      const res = await fetch(`/api/admin/models/${id}`, { 
+      const res = await fetch(`/api/admin/models/${id}`, {
         method: "DELETE",
-        headers: { 
+        headers: {
           "Authorization": token ? `Bearer ${token}` : ""
         }
       });
@@ -494,23 +543,33 @@ export default function Admin() {
         loadAdminData();
         setTimeout(() => setSaveStatus(null), 3000);
       } else {
-        alert("Deletion failed.");
+        setUiError("Deletion failed.");
       }
     } catch {
-      alert("Error deleting category model.");
+      setUiError("Error deleting category model.");
     } finally {
       setLoading(false);
     }
   };
 
-  // Delete Product
-  const handleDeleteProduct = async (id: string) => {
-    if (!confirm(`Are you absolutely sure you want to delete product "${id}"? This cannot be undone.`)) return;
+  // Delete Product — opens the styled confirm dialog first.
+  const handleDeleteProduct = (id: string) => {
+    setConfirmDialog({
+      title: "Delete Product",
+      message: `Are you absolutely sure you want to delete product "${id}"? This cannot be undone.`,
+      confirmLabel: "Delete Product",
+      danger: true,
+      onConfirm: () => executeDeleteProduct(id)
+    });
+  };
+
+  const executeDeleteProduct = async (id: string) => {
+    setUiError(null);
     setLoading(true);
     try {
       const res = await fetch(`/api/admin/products/${id}`, {
         method: "DELETE",
-        headers: { 
+        headers: {
           "Authorization": token ? `Bearer ${token}` : ""
         }
       });
@@ -519,10 +578,10 @@ export default function Admin() {
         loadAdminData();
         setTimeout(() => setSaveStatus(null), 3000);
       } else {
-        alert("Deletion failed.");
+        setUiError("Deletion failed.");
       }
     } catch {
-      alert("Failed to execute deletion command");
+      setUiError("Failed to execute deletion command");
     } finally {
       setLoading(false);
     }
@@ -532,11 +591,12 @@ export default function Admin() {
   const handleUpdateCMS = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!cms) return;
+    setUiError(null);
     setLoading(true);
     try {
       const res = await fetch("/api/admin/cms", {
         method: "POST",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
           "Authorization": token ? `Bearer ${token}` : ""
         },
@@ -547,10 +607,10 @@ export default function Admin() {
         loadAdminData();
         setTimeout(() => setSaveStatus(null), 3500);
       } else {
-        alert("Failed to update corporate CMS structure.");
+        setUiError("Failed to update corporate CMS structure.");
       }
     } catch {
-      alert("Error syncing corporate CMS config file.");
+      setUiError("Error syncing corporate CMS config file.");
     } finally {
       setLoading(false);
     }
@@ -559,8 +619,9 @@ export default function Admin() {
   // Save or Update Application Section
   const handleSaveAppSection = async (e: React.FormEvent) => {
     e.preventDefault();
+    setUiError(null);
     if (!newApp.id || !newApp.title) {
-      alert("ID and Title are required parameters.");
+      setUiError("ID and Title are required parameters.");
       return;
     }
     const payload = {
@@ -597,10 +658,10 @@ export default function Admin() {
         loadAdminData();
         setTimeout(() => setSaveStatus(null), 3500);
       } else {
-        alert("Failed to submit application section settings.");
+        setUiError("Failed to submit application section settings.");
       }
     } catch {
-      alert("Error saving industry application section.");
+      setUiError("Error saving industry application section.");
     } finally {
       setLoading(false);
     }
@@ -628,20 +689,30 @@ export default function Admin() {
         setTimeout(() => setSaveStatus(null), 3000);
       }
     } catch {
-      alert("Error toggling application section pin status.");
+      setUiError("Error toggling application section pin status.");
     } finally {
       setLoading(false);
     }
   };
 
-  // Delete Application Section
-  const handleDeleteAppSection = async (id: string) => {
-    if (!confirm(`Are you sure you want to request deletion of application section "${id}"? This requires double-verification approval.`)) return;
+  // Delete Application Section — opens the styled confirm dialog first.
+  const handleDeleteAppSection = (id: string) => {
+    setConfirmDialog({
+      title: "Delete Application Section",
+      message: `Are you sure you want to request deletion of application section "${id}"? This requires double-verification approval.`,
+      confirmLabel: "Request Deletion",
+      danger: true,
+      onConfirm: () => executeDeleteAppSection(id)
+    });
+  };
+
+  const executeDeleteAppSection = async (id: string) => {
+    setUiError(null);
     setLoading(true);
     try {
       const res = await fetch(`/api/admin/applications/${id}`, {
         method: "DELETE",
-        headers: { 
+        headers: {
           "Authorization": token ? `Bearer ${token}` : ""
         }
       });
@@ -650,10 +721,10 @@ export default function Admin() {
         loadAdminData();
         setTimeout(() => setSaveStatus(null), 3000);
       } else {
-        alert("Deletion request failed.");
+        setUiError("Deletion request failed.");
       }
     } catch {
-      alert("Error submitting deletion request.");
+      setUiError("Error submitting deletion request.");
     } finally {
       setLoading(false);
     }
@@ -713,6 +784,66 @@ export default function Admin() {
     }
   };
 
+  // Exit edit mode and reset the form back to its "add new" defaults. Shared
+  // by each tab's own "Cancel Edit" button and the persistent cross-tab
+  // editing banner below, so both leave the form in the same clean state.
+  const cancelProductEdit = () => {
+    setEditingProductId(null);
+    setNewProd({
+      id: "",
+      name: "",
+      category: models.length > 0 ? models[0].name : "",
+      modelNumber: "",
+      voltage: "",
+      current: "",
+      power: "",
+      description: "",
+      price: 0,
+      priceType: "standard",
+      priceRangeMin: 0,
+      priceRangeMax: 0,
+      image: "https://images.unsplash.com/photo-1581092160562-40aa08e78837?auto=format&fit=crop&q=80&w=800",
+      featuresInput: "",
+      specsInput: "Input Voltage: 220V AC\nLoad Regulation: < 0.01%\nPolarity: Positive/Negative",
+      applications: models.length > 0 ? (models[0].applications || []) : [],
+      brochureUrl: ""
+    });
+  };
+
+  const cancelModelEdit = () => {
+    setEditingModelId(null);
+    setNewModel({ id: "", name: "", applications: [] });
+  };
+
+  const cancelAppEdit = () => {
+    setEditingAppId(null);
+    setNewApp({
+      id: "",
+      title: "",
+      iconName: "Zap",
+      desc: "",
+      bulletsInput: "",
+      keywords: "",
+      pinned: false
+    });
+  };
+
+  // Switches to the tab holding an in-progress edit and scrolls its form into
+  // view — used by the persistent editing banner so a mid-edit admin can jump
+  // straight back to it from anywhere in the portal.
+  const jumpToActiveEdit = () => {
+    if (editingProductId) {
+      setActiveTab("products");
+      setTimeout(() => document.getElementById("product-form-container")?.scrollIntoView({ behavior: "smooth" }), 50);
+    } else if (editingModelId) {
+      setActiveTab("models");
+      setTimeout(() => document.getElementById("model-form-container")?.scrollIntoView({ behavior: "smooth" }), 50);
+    } else if (editingAppId) {
+      setActiveTab("applications");
+      setTimeout(() => document.getElementById("application-form-container")?.scrollIntoView({ behavior: "smooth" }), 50);
+    }
+  };
+
   const updateCMSField = (field: keyof CMSData, value: any) => {
     if (!cms) return;
     setCms({
@@ -754,7 +885,7 @@ export default function Admin() {
   const removeSlider = (index: number) => {
     if (!cms) return;
     if (cms.sliders.length <= 1) {
-      alert("At least one hero slide is required to preserve the front page layout presentation.");
+      setUiError("At least one hero slide is required to preserve the front page layout presentation.");
       return;
     }
     const newSliders = cms.sliders.filter((_, idx) => idx !== index);
@@ -764,9 +895,67 @@ export default function Admin() {
     });
   };
 
+  // Human-readable labels for raw payload keys, used by the pending-change diff view below.
+  const CHANGE_FIELD_LABELS: Record<string, string> = {
+    name: "Name", title: "Title", category: "Category", modelNumber: "Model Number",
+    voltage: "Voltage", current: "Current", power: "Power", description: "Description",
+    desc: "Description", price: "Price (INR)", image: "Image URL", features: "Highlights",
+    specs: "Specifications", applications: "Linked Applications", brochureUrl: "Brochure URL",
+    priceType: "Pricing Model", priceRangeMin: "Min Price (INR)", priceRangeMax: "Max Price (INR)",
+    iconName: "Icon", bullets: "Sub-Sectors", keywords: "Keywords", pinned: "Pinned to Top",
+    companyName: "Company Name", companyNameShort: "Short Brand Key", contactEmail: "Contact Email",
+    contactPhone: "Contact Phone", address: "Address", statusMessage: "Status Message", sliders: "Hero Sliders"
+  };
+
+  // Renders any field value (string, number, boolean, array, or object) as a short readable string.
+  const formatDiffValue = (val: any): string => {
+    if (val === undefined || val === null || val === "") return "—";
+    if (Array.isArray(val)) return val.length === 0 ? "—" : val.join(", ");
+    if (typeof val === "boolean") return val ? "Yes" : "No";
+    if (typeof val === "object") {
+      const entries = Object.entries(val);
+      return entries.length === 0 ? "—" : entries.map(([k, v]) => `${k}: ${v}`).join("   •   ");
+    }
+    return String(val);
+  };
+
+  // Looks up the currently-live record a pending change would replace, so we can diff against it.
+  const findLiveEntity = (change: PendingChange): any => {
+    if (change.type.endsWith("_product")) return products.find(p => p.id === change.targetId) || null;
+    if (change.type.endsWith("_model")) return models.find(m => m.id === change.targetId) || null;
+    if (change.type.endsWith("_app")) return applications.find(a => a.id === change.targetId) || null;
+    if (change.type === "update_cms") return cms;
+    return null;
+  };
+
+  // Builds a field-by-field diff (before/after) for a pending change instead of a raw JSON dump.
+  const getChangeDiff = (change: PendingChange) => {
+    const isDelete = change.type.startsWith("delete_");
+    const isCreate = change.type.startsWith("create_");
+    const live = findLiveEntity(change);
+
+    if (isDelete) {
+      const fields = live
+        ? Object.entries(live).filter(([k]) => k !== "id").map(([k, v]) => ({ field: CHANGE_FIELD_LABELS[k] || k, before: v }))
+        : [];
+      return { kind: "delete" as const, fields };
+    }
+
+    const after: Record<string, any> = change.payload || {};
+    const keys = Array.from(new Set([...Object.keys(live || {}), ...Object.keys(after)])).filter(k => k !== "id");
+    const fields = keys
+      .map(k => ({ field: CHANGE_FIELD_LABELS[k] || k, before: live ? live[k] : undefined, after: after[k] }))
+      .filter(f => isCreate
+        ? !(f.after === undefined || f.after === "" || (Array.isArray(f.after) && f.after.length === 0))
+        : JSON.stringify(f.before) !== JSON.stringify(f.after)
+      );
+
+    return { kind: (isCreate ? "create" : "update") as const, fields };
+  };
+
   if (!token) {
     return (
-      <div className="bg-slate-50 min-h-screen py-24 flex items-center justify-center px-4 font-sans text-slate-850">
+      <div className="bg-slate-50 min-h-screen py-24 flex items-center justify-center px-4 font-sans text-slate-900">
         <Helmet>
           <title>Administrative Sign In | Divo Technologies</title>
         </Helmet>
@@ -827,6 +1016,15 @@ export default function Admin() {
     );
   }
 
+  // Per-sector pending-change counts, so each sidebar tab can flag that it has
+  // maker-checker changes awaiting a second admin's approval.
+  const pendingByTab = {
+    products: pendingChanges.filter(c => c.type.endsWith("_product")).length,
+    cms: pendingChanges.filter(c => c.type === "update_cms").length,
+    models: pendingChanges.filter(c => c.type.endsWith("_model")).length,
+    applications: pendingChanges.filter(c => c.type.endsWith("_app")).length
+  };
+
   return (
     <div className="bg-slate-50 min-h-screen">
       <Helmet>
@@ -854,7 +1052,7 @@ export default function Admin() {
             >
               <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Reload Terminal
             </button>
-            <button 
+            <button
               onClick={handleLogout}
               className="px-4 py-2.5 bg-rose-900/40 hover:bg-rose-900 text-rose-300 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer border border-rose-900/10"
             >
@@ -862,6 +1060,34 @@ export default function Admin() {
             </button>
           </div>
         </div>
+
+        {/* Persistent cross-tab editing indicator — an in-progress product/model/
+            application edit stays in memory even after switching tabs, so this
+            stays visible (inside the same sticky header) no matter where you go
+            until it's finished or cancelled. */}
+        {(editingProductId || editingModelId || editingAppId) && (
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
+            <div className="w-full flex flex-wrap items-center justify-between gap-3 bg-blue-600/15 border border-blue-500/30 rounded-xl px-4 py-2.5">
+              <button
+                onClick={jumpToActiveEdit}
+                className="flex items-center gap-2 text-blue-200 hover:text-white transition-colors cursor-pointer text-left text-xs font-bold"
+              >
+                <Edit className="h-3.5 w-3.5 shrink-0" />
+                <span>
+                  Editing {editingProductId ? "product" : editingModelId ? "category model" : "application section"}:{" "}
+                  <span className="font-mono text-white bg-blue-600/30 px-2 py-0.5 rounded normal-case">{editingProductId || editingModelId || editingAppId}</span>
+                  <span className="text-blue-300/70 normal-case font-medium hidden sm:inline"> — click to jump back</span>
+                </span>
+              </button>
+              <button
+                onClick={() => { if (editingProductId) cancelProductEdit(); else if (editingModelId) cancelModelEdit(); else cancelAppEdit(); }}
+                className="text-[10px] uppercase tracking-widest text-rose-300 hover:text-rose-200 font-black px-2.5 py-1.5 rounded-lg hover:bg-rose-900/30 cursor-pointer transition-all shrink-0"
+              >
+                Cancel Edit
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
@@ -872,10 +1098,18 @@ export default function Admin() {
           </div>
         )}
 
+        {uiError && (
+          <div className="mb-8 p-4 bg-rose-50 border border-rose-200 text-rose-700 font-bold text-xs rounded-2xl flex items-start gap-2 animate-fade-in shadow-sm">
+            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+            <span className="flex-1">{uiError}</span>
+            <button onClick={() => setUiError(null)} className="text-rose-400 hover:text-rose-700 font-black text-sm leading-none cursor-pointer shrink-0">&times;</button>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-10 items-start">
           
           {/* Internal Sidebar Selector */}
-          <div className="bg-white border border-slate-150 rounded-3xl p-5 space-y-2 shadow-sm">
+          <div className="bg-white border border-slate-200 rounded-3xl p-5 space-y-2 shadow-sm">
             <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-3 mb-3">Modular Sectors</p>
             
             <button 
@@ -904,6 +1138,11 @@ export default function Admin() {
             >
               <span className="flex items-center gap-3">
                 <Database className="h-5 w-5" /> Products Matrix
+                {pendingByTab.products > 0 && (
+                  <span title={`${pendingByTab.products} change(s) awaiting approval`} className="bg-amber-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full normal-case tracking-normal leading-none">
+                    {pendingByTab.products}
+                  </span>
+                )}
               </span>
               <span className="bg-blue-600/15 text-blue-700 font-mono text-[10px] px-2 py-0.5 rounded font-black">
                 {products.length}
@@ -920,6 +1159,11 @@ export default function Admin() {
             >
               <span className="flex items-center gap-3">
                 <Globe className="h-5 w-5" /> Theme & Slides CMS
+                {pendingByTab.cms > 0 && (
+                  <span title={`${pendingByTab.cms} change(s) awaiting approval`} className="bg-amber-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full normal-case tracking-normal leading-none">
+                    {pendingByTab.cms}
+                  </span>
+                )}
               </span>
               <span className="bg-emerald-600/10 text-emerald-700 font-bold text-[9px] px-1.5 py-0.5 rounded uppercase font-black">
                 Edit
@@ -936,6 +1180,11 @@ export default function Admin() {
             >
               <span className="flex items-center gap-3">
                 <Sliders className="h-5 w-5" /> Category Models
+                {pendingByTab.models > 0 && (
+                  <span title={`${pendingByTab.models} change(s) awaiting approval`} className="bg-amber-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full normal-case tracking-normal leading-none">
+                    {pendingByTab.models}
+                  </span>
+                )}
               </span>
               <span className="bg-blue-600/15 text-blue-700 font-mono text-[10px] px-2 py-0.5 rounded font-black">
                 {models.length}
@@ -952,31 +1201,42 @@ export default function Admin() {
             >
               <span className="flex items-center gap-3">
                 <MapPin className="h-5 w-5" /> Applications
+                {pendingByTab.applications > 0 && (
+                  <span title={`${pendingByTab.applications} change(s) awaiting approval`} className="bg-amber-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full normal-case tracking-normal leading-none">
+                    {pendingByTab.applications}
+                  </span>
+                )}
               </span>
               <span className="bg-blue-600/15 text-blue-700 font-mono text-[10px] px-2 py-0.5 rounded font-black">
                 {applications.length}
               </span>
             </button>
 
-            <button 
-              onClick={() => setActiveTab("verification")}
-              className={`w-full text-left px-4 py-4.5 rounded-2xl text-xs font-extrabold uppercase tracking-widest flex items-center justify-between transition-all cursor-pointer ${
-                activeTab === "verification" 
-                ? "bg-amber-600 text-white shadow-md shadow-amber-600/10" 
-                : "bg-amber-50/50 hover:bg-amber-100/55 text-amber-800 border border-amber-200"
-              }`}
-            >
-              <span className="flex items-center gap-3">
-                <Check className="h-5 w-5" /> Pending Queue
-              </span>
-              {pendingChanges.length > 0 ? (
-                <span className="bg-amber-650 text-white font-mono text-[10px] px-2 py-0.5 rounded-full font-black animate-pulse">
-                  {pendingChanges.length}
+            {/* Compliance is a distinct governance zone, not another content-editing
+                sector — set apart with its own divider + label so it doesn't read
+                as just one more item in the "Modular Sectors" list above. */}
+            <div className="pt-4 mt-3 border-t border-slate-100">
+              <p className="text-[9px] font-black text-amber-600/80 uppercase tracking-widest px-3 mb-2">Compliance</p>
+              <button
+                onClick={() => setActiveTab("verification")}
+                className={`w-full text-left px-4 py-4.5 rounded-2xl text-xs font-extrabold uppercase tracking-widest flex items-center justify-between transition-all cursor-pointer ${
+                  activeTab === "verification"
+                  ? "bg-amber-600 text-white shadow-md shadow-amber-600/10"
+                  : "bg-amber-50/50 hover:bg-amber-100/55 text-amber-800 border border-amber-200"
+                }`}
+              >
+                <span className="flex items-center gap-3">
+                  <Check className="h-5 w-5" /> Pending Queue
                 </span>
-              ) : (
-                <span className="text-[10px] text-slate-400 font-black">0</span>
-              )}
-            </button>
+                {pendingChanges.length > 0 ? (
+                  <span className="bg-amber-600 text-white font-mono text-[10px] px-2 py-0.5 rounded-full font-black animate-pulse">
+                    {pendingChanges.length}
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-slate-400 font-black">0</span>
+                )}
+              </button>
+            </div>
 
             <div className="pt-6 border-t border-slate-100 mt-6 text-center text-[10px] text-slate-400 uppercase font-black tracking-widest">
               Secure TLS Tunneling Active
@@ -1048,16 +1308,18 @@ export default function Admin() {
                   )}
                 </div>
 
-                {/* Selected Inquiry Modal */}
+                {/* Selected Inquiry Modal — a real overlay: dims the page behind it,
+                    closes on Escape or a backdrop click, doesn't push content down. */}
                 <AnimatePresence>
                   {selectedInquiry && (
-                    <motion.div 
+                    <ModalOverlay onClose={() => setSelectedInquiry(null)}>
+                    <motion.div
                       initial={{ opacity: 0, scale: 0.98 }}
                       animate={{ opacity: 1, scale: 1 }}
                       exit={{ opacity: 0, scale: 0.98 }}
                       className="bg-white border-2 border-blue-500/25 rounded-[2.5rem] p-8 lg:p-10 shadow-xl relative"
                     >
-                      <button 
+                      <button
                         onClick={() => setSelectedInquiry(null)}
                         className="absolute top-6 right-6 bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 h-9 w-9 rounded-full flex items-center justify-center font-bold transition-all cursor-pointer"
                       >
@@ -1100,22 +1362,22 @@ export default function Admin() {
                           </div>
                           <div>
                             <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-widest block mb-1">Requested Potential Voltage</span>
-                            <span className="inline-block bg-blue-50 px-3 py-1 text-blue-700 font-black text-xs rounded-lg border border-blue-150 uppercase mt-1">{selectedInquiry.voltageRange || "Not Specified"}</span>
+                            <span className="inline-block bg-blue-50 px-3 py-1 text-blue-700 font-black text-xs rounded-lg border border-blue-100 uppercase mt-1">{selectedInquiry.voltageRange || "Not Specified"}</span>
                           </div>
                           <div>
-                            <span className="text-[9px] text-slate-450 font-extrabold uppercase tracking-widest block mb-1">Transmission Timestamp</span>
+                            <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-widest block mb-1">Transmission Timestamp</span>
                             <p className="text-xs font-mono text-slate-500 mt-1">{new Date(selectedInquiry.createdAt).toLocaleString("en-IN")}</p>
                           </div>
                         </div>
                       </div>
 
-                      <div className="bg-slate-50 rounded-2xl p-6 border border-slate-150">
+                      <div className="bg-slate-50 rounded-2xl p-6 border border-slate-200">
                         <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-widest block mb-3 border-b border-slate-200 pb-1.5 leading-none">Specifications Pitch & Description</span>
                         <p className="text-slate-700 text-xs font-semibold leading-relaxed whitespace-pre-wrap">{selectedInquiry.message}</p>
                       </div>
 
                       <div className="mt-8 flex justify-end">
-                        <button 
+                        <button
                           onClick={() => setSelectedInquiry(null)}
                           className="px-6 py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold uppercase tracking-widest text-[10px] cursor-pointer"
                         >
@@ -1123,6 +1385,7 @@ export default function Admin() {
                         </button>
                       </div>
                     </motion.div>
+                    </ModalOverlay>
                   )}
                 </AnimatePresence>
               </div>
@@ -1328,7 +1591,7 @@ export default function Admin() {
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                       <div>
-                        <label className="text-[9px] font-extrabold text-slate-450 uppercase tracking-widest block mb-1.5">Highlights (One bullet per line)</label>
+                        <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest block mb-1.5">Highlights (One bullet per line)</label>
                         <textarea 
                           rows={4}
                           placeholder="Automatic CV to CC regulation&#10;Integrated Overload interlock protective switches&#10;Local 10-turn dials"
@@ -1338,7 +1601,7 @@ export default function Admin() {
                         />
                       </div>
                       <div>
-                        <label className="text-[9px] font-extrabold text-slate-450 uppercase tracking-widest block mb-1.5">Full Datasheet Technical Specifications (Key: Value per line)</label>
+                        <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest block mb-1.5">Full Datasheet Technical Specifications (Key: Value per line)</label>
                         <textarea 
                           rows={4}
                           placeholder="Input Potential: 220V AC ± 10%, 50 Hz&#10;Ripple Factor: ≤0.02% Peak-to-Peak&#10;Insulation style: Deep epoxy vacuum encapsulation"
@@ -1355,7 +1618,7 @@ export default function Admin() {
                         {APPLICATION_SECTIONS.map((appSec) => {
                           const checked = newProd.applications.includes(appSec);
                           return (
-                            <label key={appSec} className={`p-4 border rounded-xl flex items-center gap-3 cursor-pointer transition-all ${checked ? "bg-blue-50/50 border-blue-200 text-blue-950 font-bold" : "bg-slate-50 border-slate-150 text-slate-600 hover:bg-slate-100"}`}>
+                            <label key={appSec} className={`p-4 border rounded-xl flex items-center gap-3 cursor-pointer transition-all ${checked ? "bg-blue-50/50 border-blue-200 text-blue-950 font-bold" : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"}`}>
                               <input 
                                 type="checkbox"
                                 checked={checked}
@@ -1376,30 +1639,9 @@ export default function Admin() {
 
                     <div className="flex justify-end gap-3 pt-4">
                       {editingProductId && (
-                        <button 
+                        <button
                           type="button"
-                          onClick={() => {
-                            setEditingProductId(null);
-                            setNewProd({
-                              id: "",
-                              name: "",
-                              category: models.length > 0 ? models[0].name : "",
-                              modelNumber: "",
-                              voltage: "",
-                              current: "",
-                              power: "",
-                              description: "",
-                              price: 0,
-                              priceType: "standard",
-                              priceRangeMin: 0,
-                              priceRangeMax: 0,
-                              image: "https://images.unsplash.com/photo-1581092160562-40aa08e78837?auto=format&fit=crop&q=80&w=800",
-                              featuresInput: "",
-                              specsInput: "Input Voltage: 220V AC\nLoad Regulation: < 0.01%\nPolarity: Positive/Negative",
-                              applications: models.length > 0 ? (models[0].applications || []) : [],
-                              brochureUrl: ""
-                            });
-                          }}
+                          onClick={cancelProductEdit}
                           className="px-6 h-14 border border-slate-200 text-slate-600 hover:bg-slate-50 font-extrabold rounded-xl uppercase tracking-widest text-[11px] transition-all cursor-pointer"
                         >
                           Cancel Edit
@@ -1423,7 +1665,7 @@ export default function Admin() {
                   
                   <div className="space-y-4">
                     {products.map((prod) => (
-                      <div key={prod.id} className="p-5 border border-slate-100 bg-slate-50 rounded-2xl flex items-center justify-between gap-4 flex-wrap hover:border-slate-250 transition-colors">
+                      <div key={prod.id} className="p-5 border border-slate-100 bg-slate-50 rounded-2xl flex items-center justify-between gap-4 flex-wrap hover:border-slate-300 transition-colors">
                         <div className="flex items-center gap-4 min-w-0">
                           <img src={prod.image} alt={prod.name} className="h-14 w-14 object-cover rounded-xl bg-white border border-slate-200 shrink-0" referrerPolicy="no-referrer" />
                           <div className="min-w-0">
@@ -1576,14 +1818,14 @@ export default function Admin() {
                       
                       <div className="space-y-8">
                         {cms.sliders.map((slider, index) => (
-                          <div key={index} className="p-6 bg-slate-50 border border-slate-150 rounded-2xl space-y-4 relative">
+                          <div key={index} className="p-6 bg-slate-50 border border-slate-200 rounded-2xl space-y-4 relative">
                             <div className="flex items-center justify-between">
                               <span className="bg-slate-900 text-white font-mono text-[9px] font-black px-2.5 py-1 rounded">Slide {index + 1} Settings</span>
                               {cms.sliders.length > 1 && (
                                 <button
                                   type="button"
                                   onClick={() => removeSlider(index)}
-                                  className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 border border-rose-250 text-rose-700 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1"
+                                  className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1"
                                 >
                                   <Trash2 className="h-3.5 w-3.5" /> Remove
                                 </button>
@@ -1627,7 +1869,7 @@ export default function Admin() {
                                 rows={2}
                                 value={slider.description}
                                 onChange={(e) => updateSliderField(index, "description", e.target.value)}
-                                className="w-full bg-white border border-slate-200 rounded-lg py-2.5 px-3 focus:ring-2 focus:ring-blue-500 outline-none transition-all font-semibold text-xs text-slate-850 leading-relaxed"
+                                className="w-full bg-white border border-slate-200 rounded-lg py-2.5 px-3 focus:ring-2 focus:ring-blue-500 outline-none transition-all font-semibold text-xs text-slate-800 leading-relaxed"
                               />
                             </div>
                           </div>
@@ -1695,7 +1937,7 @@ export default function Admin() {
                         {APPLICATION_SECTIONS.map((appSec) => {
                           const checked = newModel.applications.includes(appSec);
                           return (
-                            <label key={appSec} className={`p-4 border rounded-xl flex items-center gap-3 cursor-pointer transition-all ${checked ? "bg-blue-50/50 border-blue-200 text-blue-950 font-bold" : "bg-slate-50 border-slate-150 text-slate-600 hover:bg-slate-100"}`}>
+                            <label key={appSec} className={`p-4 border rounded-xl flex items-center gap-3 cursor-pointer transition-all ${checked ? "bg-blue-50/50 border-blue-200 text-blue-950 font-bold" : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"}`}>
                               <input 
                                 type="checkbox"
                                 checked={checked}
@@ -1716,12 +1958,9 @@ export default function Admin() {
 
                     <div className="flex justify-end gap-3 pt-4">
                       {editingModelId && (
-                        <button 
+                        <button
                           type="button"
-                          onClick={() => {
-                            setEditingModelId(null);
-                            setNewModel({ id: "", name: "", applications: [] });
-                          }}
+                          onClick={cancelModelEdit}
                           className="px-6 h-14 border border-slate-200 text-slate-600 hover:bg-slate-50 font-extrabold rounded-xl uppercase tracking-widest text-[11px] transition-all cursor-pointer"
                         >
                           Cancel Edit
@@ -1745,7 +1984,7 @@ export default function Admin() {
                   
                   <div className="space-y-4">
                     {models.map((model) => (
-                      <div key={model.id} className="p-6 border border-slate-100 bg-slate-50 rounded-2xl flex items-center justify-between gap-4 flex-wrap hover:border-slate-250 transition-colors">
+                      <div key={model.id} className="p-6 border border-slate-100 bg-slate-50 rounded-2xl flex items-center justify-between gap-4 flex-wrap hover:border-slate-300 transition-colors">
                         <div className="min-w-0 flex-1">
                           <span className="bg-white px-2 py-0.5 rounded border border-slate-200 text-slate-400 text-[8px] font-bold uppercase tracking-widest font-mono">ID: {model.id}</span>
                           <h4 className="font-extrabold text-slate-900 mt-1 uppercase italic text-sm">{model.name}</h4>
@@ -1885,7 +2124,7 @@ export default function Admin() {
                       />
                     </div>
 
-                    <div className="p-4 border border-dashed border-blue-150 rounded-2xl bg-blue-50/20 flex items-center justify-between">
+                    <div className="p-4 border border-dashed border-blue-200 rounded-2xl bg-blue-50/20 flex items-center justify-between">
                       <div>
                         <h4 className="text-xs font-extrabold text-slate-900 uppercase">Pin Application to Top</h4>
                         <p className="text-[10px] text-slate-500 mt-0.5">Pinned applications pop up first in sequence on the live web portal.</p>
@@ -1903,20 +2142,9 @@ export default function Admin() {
 
                     <div className="flex justify-end gap-3 pt-4">
                       {editingAppId && (
-                        <button 
+                        <button
                           type="button"
-                          onClick={() => {
-                            setEditingAppId(null);
-                            setNewApp({
-                              id: "",
-                              title: "",
-                              iconName: "Zap",
-                              desc: "",
-                              bulletsInput: "",
-                              keywords: "",
-                              pinned: false
-                            });
-                          }}
+                          onClick={cancelAppEdit}
                           className="px-6 h-14 border border-slate-200 text-slate-600 hover:bg-slate-50 font-extrabold rounded-xl uppercase tracking-widest text-[11px] transition-all cursor-pointer"
                         >
                           Cancel Edit
@@ -1940,7 +2168,7 @@ export default function Admin() {
                   
                   <div className="space-y-4">
                     {applications.map((app) => (
-                      <div key={app.id} className="p-6 border border-slate-100 bg-slate-50 rounded-2xl flex items-center justify-between gap-4 flex-wrap hover:border-slate-250 transition-colors">
+                      <div key={app.id} className="p-6 border border-slate-100 bg-slate-50 rounded-2xl flex items-center justify-between gap-4 flex-wrap hover:border-slate-300 transition-colors">
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="bg-white px-2 py-0.5 rounded border border-slate-200 text-slate-400 text-[8px] font-bold uppercase tracking-widest font-mono">ID: {app.id}</span>
@@ -1953,7 +2181,7 @@ export default function Admin() {
                           {app.bullets && app.bullets.length > 0 && (
                             <div className="flex flex-wrap gap-1.5 mt-2">
                               {app.bullets.map((b: string) => (
-                                <span key={b} className="bg-white text-slate-600 text-[9px] font-bold px-2 py-0.5 rounded border border-slate-150">
+                                <span key={b} className="bg-white text-slate-600 text-[9px] font-bold px-2 py-0.5 rounded border border-slate-200">
                                   {b}
                                 </span>
                               ))}
@@ -2077,10 +2305,67 @@ export default function Admin() {
 
                           <div className="p-5 space-y-4">
                             <div>
-                              <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Inspected Metadata Payload</div>
-                              <pre className="p-4 bg-slate-900 text-amber-400 rounded-xl text-[10px] font-mono leading-relaxed overflow-x-auto max-h-48 border border-slate-800">
-                                {JSON.stringify(change.payload, null, 2)}
-                              </pre>
+                              {(() => {
+                                const diff = getChangeDiff(change);
+
+                                if (diff.kind === "delete") {
+                                  return (
+                                    <>
+                                      <div className="text-[9px] font-black text-rose-500 uppercase tracking-widest mb-1.5">This record will be permanently removed</div>
+                                      {diff.fields.length === 0 ? (
+                                        <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-[11px] text-slate-400 italic">Original record data unavailable.</div>
+                                      ) : (
+                                        <div className="border border-rose-100 bg-rose-50/30 rounded-xl divide-y divide-rose-100 overflow-hidden">
+                                          {diff.fields.map(f => (
+                                            <div key={f.field} className="p-3 grid grid-cols-1 sm:grid-cols-[160px_1fr] gap-1 sm:gap-3 text-[11px]">
+                                              <span className="font-bold text-slate-500">{f.field}</span>
+                                              <span className="text-slate-600 line-through break-words">{formatDiffValue(f.before)}</span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </>
+                                  );
+                                }
+
+                                if (diff.fields.length === 0) {
+                                  return (
+                                    <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-[11px] text-slate-400 italic">No visible field changes detected.</div>
+                                  );
+                                }
+
+                                return (
+                                  <>
+                                    <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                                      {diff.kind === "create" ? "New record — fields being added" : `Fields changed (${diff.fields.length})`}
+                                    </div>
+                                    <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 overflow-hidden">
+                                      {diff.fields.map(f => (
+                                        <div key={f.field} className="p-3 grid grid-cols-1 sm:grid-cols-[160px_1fr] gap-1 sm:gap-3 text-[11px] bg-white">
+                                          <span className="font-bold text-slate-500">{f.field}</span>
+                                          <div className="flex flex-col gap-1 min-w-0">
+                                            {diff.kind === "update" && (
+                                              <span className="text-rose-500 line-through break-words">{formatDiffValue(f.before)}</span>
+                                            )}
+                                            <span className={`font-semibold break-words ${diff.kind === "create" ? "text-slate-800" : "text-emerald-700"}`}>
+                                              {formatDiffValue(f.after)}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </>
+                                );
+                              })()}
+
+                              <details className="mt-3 group">
+                                <summary className="text-[9px] font-bold text-slate-400 uppercase tracking-widest cursor-pointer hover:text-slate-600 select-none list-none flex items-center gap-1">
+                                  <span className="group-open:rotate-90 transition-transform inline-block">›</span> View Raw Payload JSON
+                                </summary>
+                                <pre className="mt-2 p-4 bg-slate-900 text-amber-400 rounded-xl text-[10px] font-mono leading-relaxed overflow-x-auto max-h-48 border border-slate-800">
+                                  {JSON.stringify(change.payload, null, 2)}
+                                </pre>
+                              </details>
                             </div>
 
                             {isOwnChange ? (
@@ -2164,6 +2449,43 @@ export default function Admin() {
 
         </div>
       </div>
+
+      {/* Styled stand-in for window.confirm() — used for every destructive
+          action (deletes) instead of the browser's native dialog. */}
+      <AnimatePresence>
+        {confirmDialog && (
+          <ModalOverlay onClose={() => setConfirmDialog(null)} maxWidthClass="max-w-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.96 }}
+              className="bg-white rounded-[2rem] p-8 shadow-2xl"
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div className={`h-11 w-11 rounded-xl flex items-center justify-center shrink-0 ${confirmDialog.danger ? "bg-rose-50 text-rose-600" : "bg-blue-50 text-blue-600"}`}>
+                  <AlertCircle className="h-5 w-5" />
+                </div>
+                <h3 className="text-lg font-black uppercase tracking-tight text-slate-900 italic">{confirmDialog.title}</h3>
+              </div>
+              <p className="text-slate-500 text-xs leading-relaxed font-semibold mb-8">{confirmDialog.message}</p>
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => setConfirmDialog(null)}
+                  className="px-5 h-11 border border-slate-200 text-slate-600 hover:bg-slate-50 font-extrabold rounded-xl uppercase tracking-widest text-[11px] transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => { confirmDialog.onConfirm(); setConfirmDialog(null); }}
+                  className={`px-6 h-11 text-white font-extrabold rounded-xl uppercase tracking-widest text-[11px] flex items-center gap-2 transition-all cursor-pointer shadow-lg ${confirmDialog.danger ? "bg-rose-600 hover:bg-rose-700 shadow-rose-500/20" : "bg-blue-600 hover:bg-blue-700 shadow-blue-500/20"}`}
+                >
+                  {confirmDialog.danger && <Trash2 className="h-4 w-4" />} {confirmDialog.confirmLabel}
+                </button>
+              </div>
+            </motion.div>
+          </ModalOverlay>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
