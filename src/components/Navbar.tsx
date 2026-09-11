@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Zap, ShoppingCart, Menu, X, Box } from "lucide-react";
+import { ShoppingCart, Menu, X } from "lucide-react";
 import { useState } from "react";
 import { useCart } from "../App";
 
@@ -14,21 +14,13 @@ export default function Navbar() {
         <div className="flex justify-between h-20 items-center">
           <div className="flex items-center">
             <Link to="/" className="flex items-center gap-2 group p-2">
-              <div className="flex items-center gap-2">
-                {/* Precision Engineered High Voltage Emblem */}
-                <div className="relative w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/20 group-hover:bg-blue-700 transition-all overflow-hidden">
-                  <div className="absolute inset-px rounded-md bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center">
-                    <Zap className="h-4 w-4 text-amber-400 fill-amber-400 drop-shadow-md transform -skew-x-6" />
-                  </div>
-                </div>
-                <div className="flex flex-col">
-                  <div className="flex items-baseline leading-none">
-                    <span className="text-[19px] font-black tracking-tight text-slate-900 uppercase">Divo</span>
-                    <span className="text-[19px] font-medium tracking-tight text-blue-600 uppercase">tech</span>
-                  </div>
-                  <span className="text-[8px] font-extrabold text-slate-400 uppercase tracking-widest leading-none mt-1">High Voltage Systems</span>
-                </div>
-              </div>
+              <img
+                src="/Divotech_Logo_PNG.png"
+                alt="Divotech — High Voltage Electronics"
+                width={205}
+                height={85}
+                className="h-11 w-auto group-hover:opacity-80 transition-opacity"
+              />
             </Link>
           </div>
 
