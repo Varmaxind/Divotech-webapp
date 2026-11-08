@@ -87,10 +87,7 @@ export interface CMSData {
 
 export interface User {
   email: string;
-  passwordHash: string;
   verified: boolean;
-  verificationCode?: string;
-  verificationCodeExpires?: string;
   createdAt: string;
 }
 

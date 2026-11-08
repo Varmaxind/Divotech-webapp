@@ -10,8 +10,6 @@ services:
         value: production
       # Set actual values for these in the Render dashboard (Environment tab) —
       # they're marked sync: false so they aren't stored in this file / git.
-      - key: GEMINI_API_KEY
-        sync: false
       - key: GOOGLE_CLIENT_ID
         sync: false
       - key: VITE_GOOGLE_CLIENT_ID

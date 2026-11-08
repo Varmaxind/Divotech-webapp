@@ -3,7 +3,6 @@ import { Helmet } from "react-helmet-async";
 import { motion, AnimatePresence } from "motion/react";
 import { Zap, ShieldCheck, Cpu, Globe, ArrowRight, Play, Server, Layers, HelpCircle, ChevronLeft, ChevronRight } from "lucide-react";
 import { useState, useEffect } from "react";
-import AIConsultant from "../components/AIConsultant";
 
 const defaultSlides = [
   {
@@ -279,8 +278,6 @@ export default function Home() {
           </div>
         </div>
       </section>
-
-      <AIConsultant />
     </div>
   );
 }

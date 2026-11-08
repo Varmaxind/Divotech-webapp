@@ -138,10 +138,6 @@ export default function Admin() {
   const [pendingChanges, setPendingChanges] = useState<PendingChange[]>([]);
   const [changeHistory, setChangeHistory] = useState<PendingChange[]>([]);
   const [cms, setCms] = useState<CMSData | null>(null);
-  
-  // Verification dialog states
-  const [verifierEmailInput, setVerifierEmailInput] = useState("");
-  const [verificationError, setVerificationError] = useState("");
 
   // UI Loading / Feedback State
   const [loading, setLoading] = useState(false);
@@ -2258,13 +2254,6 @@ export default function Admin() {
                       <p className="text-[10px] text-slate-400 mt-1">Identity verified securely via corporate systems authentication token.</p>
                     </div>
                   </div>
-
-                  {verificationError && (
-                    <div className="bg-rose-50 border border-rose-200 text-rose-700 font-semibold text-xs p-4 rounded-xl flex items-center gap-2 mb-8">
-                      <AlertCircle className="h-4 w-4 shrink-0" />
-                      <span>{verificationError}</span>
-                    </div>
-                  )}
 
                   {pendingChanges.length === 0 ? (
                     <div className="border border-dashed border-slate-200 rounded-2xl p-16 text-center bg-slate-50/50">

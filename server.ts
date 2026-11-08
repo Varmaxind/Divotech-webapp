@@ -1,7 +1,6 @@
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
-import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { OAuth2Client } from "google-auth-library";
 
@@ -38,9 +37,33 @@ app.get("/api/cms", (req, res) => {
 });
 
 // Contact Route
+// Lightweight, no-dependency human check: the form carries a hidden
+// honeypot field ("website") that only an automated filler would populate,
+// plus the timestamp the form was rendered at. A real visitor always takes
+// at least a couple of seconds to read and fill the form; a script posting
+// straight to this endpoint typically doesn't send formRenderedAt at all.
+const MIN_HUMAN_FILL_TIME_MS = 1500;
+
 app.post("/api/contact", (req, res) => {
-  const { name, email, company, phone, message, industry, voltageRange } = req.body;
-  
+  const { name, email, company, phone, message, industry, voltageRange, website, formRenderedAt } = req.body;
+
+  if (!name || !email || !message) {
+    return res.status(400).json({ error: "Name, email, and message are required." });
+  }
+
+  // Honeypot tripped — a bot filled in a field real users never see.
+  if (typeof website === "string" && website.trim() !== "") {
+    return res.status(400).json({ error: "Unable to verify this submission. Please try again." });
+  }
+
+  // Submitted implausibly fast after the form loaded, or missing the
+  // timing signal entirely (e.g. a script posting directly to this
+  // endpoint without rendering the form first).
+  const renderedAt = Number(formRenderedAt);
+  if (!renderedAt || Date.now() - renderedAt < MIN_HUMAN_FILL_TIME_MS) {
+    return res.status(400).json({ error: "Unable to verify this submission. Please try again." });
+  }
+
   // Save to database
   const inquiry = db.saveInquiry({
     name,
@@ -138,7 +161,6 @@ app.post("/api/admin/google-sso", async (req, res) => {
     if (!user) {
       db.saveUser({
         email,
-        passwordHash: "",
         verified: true,
         createdAt: new Date().toISOString()
       });
@@ -464,39 +486,6 @@ app.post("/api/admin/pending-changes/:id/reject", (req, res) => {
 
   const updated = db.updatePendingChangeStatus(id, "rejected", normalizedVerifier);
   res.json({ success: true, change: updated });
-});
-
-// Initialize Gemini
-const genAI = process.env.GEMINI_API_KEY ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }) : null;
-
-app.post("/api/ai/consult", async (req, res) => {
-  if (!genAI) {
-    return res.status(503).json({ error: "AI service not available" });
-  }
-  
-  try {
-    const { prompt, history } = req.body;
-    const systemInstruction = "You are a senior technical consultant for Divotech (Divo Technologies Pvt. Ltd.), an Indian high-voltage power supply manufacturer based in Hyderabad. We specialize in HV DC supplies, X-ray generators, and custom power conversion. Established in 2015, we are an MSME and DPIIT Startup. All products are Made in India. Help clients with technical specs, application fit, and custom project inquiries.";
-
-    const contents = [];
-    if (history && history.length > 0) {
-      contents.push(...history);
-    }
-    contents.push({ role: "user", parts: [{ text: prompt }] });
-
-    const response = await genAI.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: contents,
-      config: {
-        systemInstruction: systemInstruction
-      }
-    });
-    
-    res.json({ text: response.text });
-  } catch (error) {
-    console.error("AI Consultation Error:", error);
-    res.status(500).json({ error: "Failed to process AI consultation" });
-  }
 });
 
 // Vite Setup
