@@ -9,7 +9,6 @@ interface Product {
   name: string;
   category: string;
   voltage: string;
-  price: number;
   image: string;
   applications: string[];
 }

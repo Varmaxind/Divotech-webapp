@@ -5,17 +5,30 @@ import { Mail, Phone, MapPin, Send, CheckCircle2, Factory, Loader2 } from "lucid
 export default function Contact() {
   const [formData, setFormData] = useState({ name: "", email: "", company: "", message: "", industry: "Research", voltageRange: "" });
   const [status, setStatus] = useState<"idle" | "sending" | "success">("idle");
+  // Anti-bot honeypot: real visitors never see or fill this field. Bots that
+  // auto-fill every input on a page will populate it, and the server rejects
+  // the submission when it's non-empty.
+  const [website, setWebsite] = useState("");
+  // Timestamp the form first rendered, sent along so the server can reject
+  // submissions that arrive implausibly fast to have been typed by a human.
+  const [formRenderedAt] = useState(() => Date.now());
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setStatus("sending");
-    
+
     try {
-      await fetch("/api/contact", {
+      const res = await fetch("/api/contact", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({ ...formData, website, formRenderedAt }),
       });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        console.error(data.error || "Submission failed verification");
+        setStatus("idle");
+        return;
+      }
       setStatus("success");
     } catch (error) {
       console.error(error);
@@ -86,6 +99,19 @@ export default function Contact() {
               </div>
             ) : (
               <form onSubmit={handleSubmit} className="space-y-6 text-left">
+                {/* Honeypot: visually hidden from real visitors, off the tab
+                    order, and excluded from autofill/accessibility trees —
+                    only an automated form-filler will ever populate it. */}
+                <input
+                  type="text"
+                  name="website"
+                  value={website}
+                  onChange={(e) => setWebsite(e.target.value)}
+                  tabIndex={-1}
+                  autoComplete="off"
+                  aria-hidden="true"
+                  className="absolute -left-[9999px] h-0 w-0 opacity-0"
+                />
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
                     <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 px-1">Full Name</label>

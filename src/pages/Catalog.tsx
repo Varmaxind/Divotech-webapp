@@ -3,21 +3,16 @@ import { Helmet } from "react-helmet-async";
 import { Search, Filter, ArrowRight, Zap } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion } from "motion/react";
-import { formatProductPrice } from "../utils";
 
 interface Product {
   id: string;
   name: string;
   category: string;
   voltage: string;
-  price: number;
   image: string;
   description: string;
   specs?: Record<string, string>;
   brochureUrl?: string;
-  priceType?: "standard" | "range" | "contact";
-  priceRangeMin?: number;
-  priceRangeMax?: number;
 }
 
 interface Model {
@@ -234,7 +229,7 @@ export default function Catalog() {
                               <div className="flex flex-col">
                                 <span className="text-[8px] font-extrabold text-slate-400 uppercase tracking-widest">Pricing</span>
                                 <span className="text-base font-extrabold text-slate-900">
-                                  {formatProductPrice(product)}
+                                  Contact for Pricing
                                 </span>
                               </div>
                               <Link 

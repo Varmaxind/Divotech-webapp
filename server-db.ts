@@ -1,8 +1,12 @@
 import fs from "fs";
 import path from "path";
+import crypto from "crypto";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const DB_FILE = path.join(DATA_DIR, "db.json");
+
+// Admin sessions expire after 12 hours of issuance
+const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 
 export interface Product {
   id: string;
@@ -13,16 +17,11 @@ export interface Product {
   current: string;
   power: string;
   description: string;
-  price: number;
-  currency: string;
   image: string;
   features: string[];
   specs: Record<string, string>;
   applications: string[];
   brochureUrl?: string;
-  priceType?: "standard" | "range" | "contact";
-  priceRangeMin?: number;
-  priceRangeMax?: number;
 }
 
 export interface Model {
@@ -83,11 +82,18 @@ export interface CMSData {
 
 export interface User {
   email: string;
-  passwordHash: string;
   verified: boolean;
-  verificationCode?: string;
-  verificationCodeExpires?: string;
   createdAt: string;
+}
+
+// A server-side record of an issued admin session. The opaque `token` is the
+// only thing handed to the client — it is meaningless without a matching,
+// unexpired entry here, so it cannot be forged by constructing a string.
+export interface Session {
+  token: string;
+  email: string;
+  createdAt: string;
+  expiresAt: string;
 }
 
 // Ensure database file and directory exist
@@ -107,8 +113,6 @@ function initDB() {
         current: "0 to 50mA",
         power: "2000W (2kW)",
         description: "Divotech’s ER Series of high voltage power supplies are designed to meet the best performance standards. They are low ripple, air/epoxy insulated, fast response units, with precise regulation and low arc discharge currents. Ideal for electrostatics, E-beam systems, hipot testing, and capacitor charging.",
-        price: 245000,
-        currency: "INR",
         image: "https://images.unsplash.com/photo-1581092160562-40aa08e78837?auto=format&fit=crop&q=80&w=800",
         features: [
           "Positive or Negative Polarity (Available with either with respect to chassis ground)",
@@ -147,8 +151,6 @@ function initDB() {
         current: "0 to 1mA",
         power: "50W",
         description: "Section B Item III, solid-state encapsulated 50kV 50W high-stability power supply ideal for XRF analysis and material inspection. Designed specifically for industrial NDT and medical diagnostic systems, featuring an integrated high-stability filament power supply.",
-        price: 195000,
-        currency: "INR",
         image: "https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&q=80&w=800",
         features: [
           "Integrated Filament Power Supply (0-3A, 5V automatic constant current loop)",
@@ -183,8 +185,6 @@ function initDB() {
         current: "0 to 30A Peak",
         power: "2.5kW",
         description: "Fast rise-time pulsed HV source for plasma and semiconductor fabrication applications. Supports variable duty cycles and high frequency remote control signaling.",
-        price: 285000,
-        currency: "INR",
         image: "https://images.unsplash.com/photo-1530497610245-94d3c16cda28?auto=format&fit=crop&q=80&w=800",
         features: [
           "Microsecond switching with variable duty cycle (5% to 95%)",
@@ -213,8 +213,6 @@ function initDB() {
         current: "Custom",
         power: "Up to 50kW",
         description: "Bespoke high voltage engineering tailored for specific OEM requirements and mission-critical applications.",
-        price: 0,
-        currency: "INR",
         image: "https://images.unsplash.com/photo-159742324403d-ef1dd7d6da10?auto=format&fit=crop&q=80&w=800",
         features: [
           "Custom structural envelope and oil/air/epoxy insulation type",
@@ -400,6 +398,10 @@ function getDB() {
     cachedData.users = [];
     dirty = true;
   }
+  if (!cachedData.sessions) {
+    cachedData.sessions = [];
+    dirty = true;
+  }
   if (!cachedData.models) {
     cachedData.models = [
       { id: "regulated-dc", name: "High Voltage Regulated DC Power Supplies", applications: ["Industrial Processes", "Vacuum & Plasma", "Analytical Instrumentation", "Inspection & Test Equipment", "Semiconductor Fabrication", "Research & Academia"] },
@@ -412,22 +414,19 @@ function getDB() {
     ];
     dirty = true;
   }
-  // Migrate products to support priceType, priceRangeMin, priceRangeMax
+  // Every product is now "Contact for Pricing" only — strip any leftover
+  // price/priceType/priceRange/currency fields from products stored under
+  // the old three-way pricing model so they don't linger in the data file.
   let productsMigrated = false;
+  const LEGACY_PRICE_FIELDS = ["price", "currency", "priceType", "priceRangeMin", "priceRangeMax"];
   if (cachedData.products && Array.isArray(cachedData.products)) {
     cachedData.products.forEach((prod: any) => {
-      if (!prod.priceType) {
-        prod.priceType = prod.price > 0 ? "standard" : "contact";
-        productsMigrated = true;
-      }
-      if (prod.priceRangeMin === undefined) {
-        prod.priceRangeMin = 0;
-        productsMigrated = true;
-      }
-      if (prod.priceRangeMax === undefined) {
-        prod.priceRangeMax = 0;
-        productsMigrated = true;
-      }
+      LEGACY_PRICE_FIELDS.forEach(field => {
+        if (field in prod) {
+          delete prod[field];
+          productsMigrated = true;
+        }
+      });
     });
   }
   if (productsMigrated) {
@@ -620,5 +619,42 @@ export const db = {
     }
     saveDB(data);
     return user;
+  },
+
+  // Sessions: created only after a real Google ID token has been verified
+  // server-side (see /api/admin/google-sso). The token is an unguessable
+  // random value — nothing about its contents implies who it belongs to.
+  createSession: (email: string): Session => {
+    const data = getDB();
+    if (!data.sessions) data.sessions = [];
+    const session: Session = {
+      token: crypto.randomBytes(32).toString("hex"),
+      email: email.toLowerCase().trim(),
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + SESSION_TTL_MS).toISOString()
+    };
+    data.sessions.push(session);
+    saveDB(data);
+    return session;
+  },
+  getSession: (token: string): Session | null => {
+    if (!token) return null;
+    const data = getDB();
+    if (!data.sessions) return null;
+    const session = data.sessions.find((s: Session) => s.token === token);
+    if (!session) return null;
+    if (session.expiresAt < new Date().toISOString()) {
+      // Expired — clean it up so it can never be reused
+      data.sessions = data.sessions.filter((s: Session) => s.token !== token);
+      saveDB(data);
+      return null;
+    }
+    return session;
+  },
+  deleteSession: (token: string): void => {
+    const data = getDB();
+    if (!data.sessions || !token) return;
+    data.sessions = data.sessions.filter((s: Session) => s.token !== token);
+    saveDB(data);
   }
 };

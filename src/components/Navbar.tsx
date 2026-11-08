@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Zap, ShoppingCart, Menu, X, Box } from "lucide-react";
+import { ShoppingCart, Menu, X } from "lucide-react";
 import { useState } from "react";
 import { useCart } from "../App";
 
@@ -14,21 +14,13 @@ export default function Navbar() {
         <div className="flex justify-between h-20 items-center">
           <div className="flex items-center">
             <Link to="/" className="flex items-center gap-2 group p-2">
-              <div className="flex items-center gap-2">
-                {/* Precision Engineered High Voltage Emblem */}
-                <div className="relative w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/20 group-hover:bg-blue-700 transition-all overflow-hidden">
-                  <div className="absolute inset-px rounded-md bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center">
-                    <Zap className="h-4 w-4 text-amber-400 fill-amber-400 drop-shadow-md transform -skew-x-6" />
-                  </div>
-                </div>
-                <div className="flex flex-col">
-                  <div className="flex items-baseline leading-none">
-                    <span className="text-[19px] font-black tracking-tight text-slate-900 uppercase">Divo</span>
-                    <span className="text-[19px] font-medium tracking-tight text-blue-600 uppercase">tech</span>
-                  </div>
-                  <span className="text-[8px] font-extrabold text-slate-400 uppercase tracking-widest leading-none mt-1">High Voltage Systems</span>
-                </div>
-              </div>
+              <img
+                src="/Divotech_Logo_PNG.png"
+                alt="Divotech — High Voltage Electronics"
+                width={205}
+                height={85}
+                className="h-11 w-auto group-hover:opacity-80 transition-opacity"
+              />
             </Link>
           </div>
 
@@ -37,8 +29,6 @@ export default function Navbar() {
             <Link to="/about" className="text-[11px] font-bold text-slate-600 hover:text-blue-600 transition-colors uppercase tracking-widest">About Us</Link>
             <Link to="/catalog" className="text-[11px] font-bold text-slate-600 hover:text-blue-600 transition-colors uppercase tracking-widest">Products</Link>
             <Link to="/applications" className="text-[11px] font-bold text-slate-600 hover:text-blue-600 transition-colors uppercase tracking-widest">Applications</Link>
-            <Link to="/custom-projects" className="text-[11px] font-bold text-slate-600 hover:text-blue-600 transition-colors uppercase tracking-widest">Custom Systems</Link>
-            <Link to="/resources" className="text-[11px] font-bold text-slate-600 hover:text-blue-600 transition-colors uppercase tracking-widest">Technical Specs</Link>
             <Link to="/careers" className="text-[11px] font-bold text-slate-600 hover:text-blue-600 transition-colors uppercase tracking-widest">Careers</Link>
             <Link to="/contact" className="text-[11px] font-bold text-slate-600 hover:text-blue-600 transition-colors uppercase tracking-widest">Contact</Link>
             <div className="h-4 w-px bg-slate-200 mx-1"></div>
@@ -78,8 +68,6 @@ export default function Navbar() {
             <Link to="/about" onClick={() => setIsOpen(false)} className="block px-3 py-2.5 text-slate-600 hover:text-blue-600 font-bold text-sm tracking-wider uppercase border-b border-slate-50">About Us</Link>
             <Link to="/catalog" onClick={() => setIsOpen(false)} className="block px-3 py-2.5 text-slate-600 hover:text-blue-600 font-bold text-sm tracking-wider uppercase border-b border-slate-50">Products & Catalog</Link>
             <Link to="/applications" onClick={() => setIsOpen(false)} className="block px-3 py-2.5 text-slate-600 hover:text-blue-600 font-bold text-sm tracking-wider uppercase border-b border-slate-50">HV Applications</Link>
-            <Link to="/custom-projects" onClick={() => setIsOpen(false)} className="block px-3 py-2.5 text-slate-600 hover:text-blue-600 font-bold text-sm tracking-wider uppercase border-b border-slate-50">Custom Systems</Link>
-            <Link to="/resources" onClick={() => setIsOpen(false)} className="block px-3 py-2.5 text-slate-600 hover:text-blue-600 font-bold text-sm tracking-wider uppercase border-b border-slate-50">Technical Specs</Link>
             <Link to="/careers" onClick={() => setIsOpen(false)} className="block px-3 py-2.5 text-slate-600 hover:text-blue-600 font-bold text-sm tracking-wider uppercase border-b border-slate-50">Careers</Link>
             <Link to="/contact" onClick={() => setIsOpen(false)} className="block px-3 py-2.5 text-slate-600 hover:text-blue-600 font-bold text-sm tracking-wider uppercase border-b border-slate-50">Contact Us</Link>
             <div className="pt-4 flex items-center justify-between">

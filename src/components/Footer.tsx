@@ -17,7 +17,6 @@ export default function Footer() {
         
         <div className="flex items-center gap-6 text-[11px]">
           <Link to="/careers" className="hover:text-blue-700 uppercase tracking-widest transition-colors font-bold">Careers</Link>
-          <Link to="/resources" className="hover:text-blue-700 uppercase tracking-widest transition-colors font-bold">Technical Specs</Link>
           <div className="hidden md:block w-px h-3 bg-slate-200"></div>
           <span className="text-slate-900 font-bold uppercase tracking-widest">Hyderabad, Telangana, India</span>
         </div>

@@ -10,21 +10,16 @@ import Cart from "./pages/Cart";
 import Contact from "./pages/Contact";
 import About from "./pages/About";
 import Applications from "./pages/Applications";
-import CustomProjects from "./pages/CustomProjects";
-import Resources from "./pages/Resources";
 import Careers from "./pages/Careers";
 import Admin from "./pages/Admin";
 
-// Context for Cart
+// Context for Cart. Every product is "Contact for Pricing" now, so cart
+// items carry no price — this is a quote-request list, not a priced order.
 interface CartItem {
   id: string;
   name: string;
-  price: number;
   quantity: number;
   image: string;
-  priceType?: "standard" | "range" | "contact";
-  priceRangeMin?: number;
-  priceRangeMax?: number;
 }
 
 interface CartContextType {
@@ -32,7 +27,6 @@ interface CartContextType {
   addToCart: (item: CartItem) => void;
   removeFromCart: (id: string) => void;
   clearCart: () => void;
-  total: number;
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
@@ -64,11 +58,9 @@ export default function App() {
 
   const clearCart = () => setCart([]);
 
-  const total = cart.reduce((acc, item) => acc + item.price * item.quantity, 0);
-
   return (
     <HelmetProvider>
-      <CartContext.Provider value={{ cart, addToCart, removeFromCart, clearCart, total }}>
+      <CartContext.Provider value={{ cart, addToCart, removeFromCart, clearCart }}>
         <Router>
           <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-900">
             <Navbar />
@@ -79,8 +71,6 @@ export default function App() {
                 <Route path="/catalog" element={<Catalog />} />
                 <Route path="/product/:id" element={<ProductDetail />} />
                 <Route path="/applications" element={<Applications />} />
-                <Route path="/custom-projects" element={<CustomProjects />} />
-                <Route path="/resources" element={<Resources />} />
                 <Route path="/careers" element={<Careers />} />
                 <Route path="/cart" element={<Cart />} />
                 <Route path="/contact" element={<Contact />} />
