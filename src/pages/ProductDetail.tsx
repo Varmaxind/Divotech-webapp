@@ -4,7 +4,6 @@ import { Helmet } from "react-helmet-async";
 import { Zap, Shield, Check, ShoppingCart, ArrowLeft, Info, Download } from "lucide-react";
 import { useCart } from "../App";
 import { motion } from "motion/react";
-import { formatProductPrice } from "../utils";
 
 interface Product {
   id: string;
@@ -13,15 +12,11 @@ interface Product {
   voltage: string;
   current: string;
   power: string;
-  price: number;
   image: string;
   description: string;
   features: string[];
   specs?: Record<string, string>;
   brochureUrl?: string;
-  priceType?: "standard" | "range" | "contact";
-  priceRangeMin?: number;
-  priceRangeMax?: number;
 }
 
 export default function ProductDetail() {
@@ -56,19 +51,13 @@ export default function ProductDetail() {
       addToCart({
         id: product.id,
         name: product.name,
-        price: product.price,
         quantity: 1,
-        image: product.image,
-        priceType: product.priceType,
-        priceRangeMin: product.priceRangeMin,
-        priceRangeMax: product.priceRangeMax
+        image: product.image
       });
       setAdded(true);
       setTimeout(() => setAdded(false), 2000);
     }
   };
-
-  const hasPricing = product && product.price > 0;
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -179,7 +168,7 @@ export default function ProductDetail() {
                 <div>
                   <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest block mb-1">Commercial Pricing</span>
                   <span className="text-3xl font-extrabold text-slate-900 tracking-tight">
-                    {formatProductPrice(product)}
+                    Contact for Pricing
                   </span>
                 </div>
                 <div className="flex items-center gap-2 text-emerald-600 font-bold text-[10px] bg-emerald-50 px-3 py-2 rounded-lg.5 border border-emerald-100 uppercase tracking-wider">

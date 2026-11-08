@@ -6,7 +6,6 @@ import {
   MapPin, Phone, Mail, Sliders, Image, Tag, Inbox, Edit, History
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { formatProductPrice } from "../utils";
 
 interface Product {
   id: string;
@@ -17,15 +16,11 @@ interface Product {
   current: string;
   power: string;
   description: string;
-  price: number;
   image: string;
   features: string[];
   specs: Record<string, string>;
   applications: string[];
   brochureUrl?: string;
-  priceType?: "standard" | "range" | "contact";
-  priceRangeMin?: number;
-  priceRangeMax?: number;
 }
 
 interface Model {
@@ -273,10 +268,6 @@ export default function Admin() {
     current: "",
     power: "",
     description: "",
-    price: 0,
-    priceType: "standard" as "standard" | "range" | "contact",
-    priceRangeMin: 0,
-    priceRangeMax: 0,
     image: "https://images.unsplash.com/photo-1581092160562-40aa08e78837?auto=format&fit=crop&q=80&w=800",
     featuresInput: "",
     specsInput: "Input Voltage: 220V AC\nLoad Regulation: < 0.01%\nPolarity: Positive/Negative",
@@ -414,15 +405,11 @@ export default function Admin() {
       current: newProd.current || "0A",
       power: newProd.power || "0W",
       description: newProd.description || "No specifications description provided.",
-      price: Number(newProd.price) || 0,
       image: newProd.image || "https://images.unsplash.com/photo-1581092160562-40aa08e78837?auto=format&fit=crop&q=80&w=800",
       features,
       specs,
       applications: newProd.applications,
-      brochureUrl: newProd.brochureUrl ? newProd.brochureUrl.trim() : undefined,
-      priceType: newProd.priceType,
-      priceRangeMin: Number(newProd.priceRangeMin) || 0,
-      priceRangeMax: Number(newProd.priceRangeMax) || 0
+      brochureUrl: newProd.brochureUrl ? newProd.brochureUrl.trim() : undefined
     };
 
     setLoading(true);
@@ -448,10 +435,6 @@ export default function Admin() {
           current: "",
           power: "",
           description: "",
-          price: 0,
-          priceType: "standard" as "standard" | "range" | "contact",
-          priceRangeMin: 0,
-          priceRangeMax: 0,
           image: "https://images.unsplash.com/photo-1581092160562-40aa08e78837?auto=format&fit=crop&q=80&w=800",
           featuresInput: "",
           specsInput: "Input Voltage: 220V AC\nLoad Regulation: < 0.01%\nPolarity: Positive/Negative",
@@ -728,12 +711,12 @@ export default function Admin() {
 
   // Verify / Approve Pending Change
   const handleApproveChange = async (changeId: string) => {
-    setVerificationError("");
+    setUiError(null);
     setLoading(true);
     try {
       const res = await fetch(`/api/admin/pending-changes/${changeId}/approve`, {
         method: "POST",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
           "Authorization": token ? `Bearer ${token}` : ""
         }
@@ -744,10 +727,10 @@ export default function Admin() {
         setTimeout(() => setSaveStatus(null), 3000);
       } else {
         const err = await res.json();
-        setVerificationError(err.error || "Approval Failed");
+        setUiError(err.error || "Approval Failed");
       }
     } catch {
-      setVerificationError("Network error approving pending change.");
+      setUiError("Network error approving pending change.");
     } finally {
       setLoading(false);
     }
@@ -755,12 +738,12 @@ export default function Admin() {
 
   // Reject Pending Change
   const handleRejectChange = async (changeId: string) => {
-    setVerificationError("");
+    setUiError(null);
     setLoading(true);
     try {
       const res = await fetch(`/api/admin/pending-changes/${changeId}/reject`, {
         method: "POST",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
           "Authorization": token ? `Bearer ${token}` : ""
         }
@@ -771,10 +754,10 @@ export default function Admin() {
         setTimeout(() => setSaveStatus(null), 3000);
       } else {
         const err = await res.json();
-        setVerificationError(err.error || "Rejection Failed");
+        setUiError(err.error || "Rejection Failed");
       }
     } catch {
-      setVerificationError("Network error rejecting pending change.");
+      setUiError("Network error rejecting pending change.");
     } finally {
       setLoading(false);
     }
@@ -794,10 +777,6 @@ export default function Admin() {
       current: "",
       power: "",
       description: "",
-      price: 0,
-      priceType: "standard",
-      priceRangeMin: 0,
-      priceRangeMax: 0,
       image: "https://images.unsplash.com/photo-1581092160562-40aa08e78837?auto=format&fit=crop&q=80&w=800",
       featuresInput: "",
       specsInput: "Input Voltage: 220V AC\nLoad Regulation: < 0.01%\nPolarity: Positive/Negative",
@@ -946,7 +925,7 @@ export default function Admin() {
         : JSON.stringify(f.before) !== JSON.stringify(f.after)
       );
 
-    return { kind: (isCreate ? "create" : "update") as const, fields };
+    return { kind: isCreate ? ("create" as const) : ("update" as const), fields };
   };
 
   if (!token) {
@@ -1428,7 +1407,7 @@ export default function Admin() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                       <div>
                         <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest block mb-1.5">Taxonomy Category (Dynamic Models)</label>
                         <select 
@@ -1460,63 +1439,11 @@ export default function Admin() {
                           className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 focus:ring-2 focus:ring-blue-500 outline-none transition-all font-semibold font-mono text-xs text-slate-800"
                         />
                       </div>
-                      <div>
-                        <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest block mb-1.5">Pricing Model</label>
-                        <select
-                          value={newProd.priceType}
-                          onChange={(e) => setNewProd({...newProd, priceType: e.target.value as any})}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 focus:ring-2 focus:ring-blue-500 outline-none transition-all font-semibold text-xs text-slate-800"
-                        >
-                          <option value="standard">Standard Static Price</option>
-                          <option value="range">Dynamic Price Range</option>
-                          <option value="contact">Contact for Price</option>
-                        </select>
-                      </div>
                     </div>
 
-                    {newProd.priceType === "standard" && (
-                      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 mb-6">
-                        <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest block mb-1.5">Standard Public Price (INR) (Ex-GST)</label>
-                        <input 
-                          type="number"
-                          placeholder="e.g. 125000"
-                          value={newProd.price}
-                          onChange={(e) => setNewProd({...newProd, price: Number(e.target.value)})}
-                          className="w-full bg-white border border-slate-200 rounded-xl py-3 px-4 focus:ring-2 focus:ring-blue-500 outline-none transition-all font-semibold text-xs text-slate-800"
-                        />
-                      </div>
-                    )}
-
-                    {newProd.priceType === "range" && (
-                      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 mb-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest block mb-1.5">Minimum Price (INR)</label>
-                          <input 
-                            type="number"
-                            placeholder="e.g. 150000"
-                            value={newProd.priceRangeMin}
-                            onChange={(e) => setNewProd({...newProd, priceRangeMin: Number(e.target.value)})}
-                            className="w-full bg-white border border-slate-200 rounded-xl py-3 px-4 focus:ring-2 focus:ring-blue-500 outline-none transition-all font-semibold text-xs text-slate-800"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest block mb-1.5">Maximum Price (INR)</label>
-                          <input 
-                            type="number"
-                            placeholder="e.g. 300000"
-                            value={newProd.priceRangeMax}
-                            onChange={(e) => setNewProd({...newProd, priceRangeMax: Number(e.target.value)})}
-                            className="w-full bg-white border border-slate-200 rounded-xl py-3 px-4 focus:ring-2 focus:ring-blue-500 outline-none transition-all font-semibold text-xs text-slate-800"
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {newProd.priceType === "contact" && (
-                      <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5 mb-6 text-blue-800 text-xs font-semibold leading-relaxed">
-                        Notice: The system will automatically replace the price on the catalog and details page with a "Contact for Price" tag. Customers can submit specs requests to obtain tailored quotations.
-                      </div>
-                    )}
+                    <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5 mb-6 text-blue-800 text-xs font-semibold leading-relaxed">
+                      Pricing: every product is listed as "Contact for Pricing." Customers submit a specs request to obtain a tailored quotation — there is no per-product price to set here.
+                    </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
                       <div>
@@ -1674,7 +1601,7 @@ export default function Admin() {
                         <div className="flex items-center gap-3">
                           <div className="text-right mr-3">
                             <div className="text-[8px] uppercase tracking-widest font-extrabold text-slate-400">Pricing Scale</div>
-                            <div className="text-sm font-extrabold text-slate-800">{formatProductPrice(prod)}</div>
+                            <div className="text-sm font-extrabold text-slate-800">Contact for Pricing</div>
                           </div>
                           
                           <button 
@@ -1689,10 +1616,6 @@ export default function Admin() {
                                 current: prod.current,
                                 power: prod.power,
                                 description: prod.description,
-                                price: prod.price,
-                                priceType: prod.priceType || "standard",
-                                priceRangeMin: prod.priceRangeMin || 0,
-                                priceRangeMax: prod.priceRangeMax || 0,
                                 image: prod.image,
                                 featuresInput: prod.features.join("\n"),
                                 specsInput: Object.entries(prod.specs).map(([k, v]) => `${k}: ${v}`).join("\n"),
