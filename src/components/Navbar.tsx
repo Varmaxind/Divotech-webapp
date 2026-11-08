@@ -29,8 +29,6 @@ export default function Navbar() {
             <Link to="/about" className="text-[11px] font-bold text-slate-600 hover:text-blue-600 transition-colors uppercase tracking-widest">About Us</Link>
             <Link to="/catalog" className="text-[11px] font-bold text-slate-600 hover:text-blue-600 transition-colors uppercase tracking-widest">Products</Link>
             <Link to="/applications" className="text-[11px] font-bold text-slate-600 hover:text-blue-600 transition-colors uppercase tracking-widest">Applications</Link>
-            <Link to="/custom-projects" className="text-[11px] font-bold text-slate-600 hover:text-blue-600 transition-colors uppercase tracking-widest">Custom Systems</Link>
-            <Link to="/resources" className="text-[11px] font-bold text-slate-600 hover:text-blue-600 transition-colors uppercase tracking-widest">Technical Specs</Link>
             <Link to="/careers" className="text-[11px] font-bold text-slate-600 hover:text-blue-600 transition-colors uppercase tracking-widest">Careers</Link>
             <Link to="/contact" className="text-[11px] font-bold text-slate-600 hover:text-blue-600 transition-colors uppercase tracking-widest">Contact</Link>
             <div className="h-4 w-px bg-slate-200 mx-1"></div>
@@ -70,8 +68,6 @@ export default function Navbar() {
             <Link to="/about" onClick={() => setIsOpen(false)} className="block px-3 py-2.5 text-slate-600 hover:text-blue-600 font-bold text-sm tracking-wider uppercase border-b border-slate-50">About Us</Link>
             <Link to="/catalog" onClick={() => setIsOpen(false)} className="block px-3 py-2.5 text-slate-600 hover:text-blue-600 font-bold text-sm tracking-wider uppercase border-b border-slate-50">Products & Catalog</Link>
             <Link to="/applications" onClick={() => setIsOpen(false)} className="block px-3 py-2.5 text-slate-600 hover:text-blue-600 font-bold text-sm tracking-wider uppercase border-b border-slate-50">HV Applications</Link>
-            <Link to="/custom-projects" onClick={() => setIsOpen(false)} className="block px-3 py-2.5 text-slate-600 hover:text-blue-600 font-bold text-sm tracking-wider uppercase border-b border-slate-50">Custom Systems</Link>
-            <Link to="/resources" onClick={() => setIsOpen(false)} className="block px-3 py-2.5 text-slate-600 hover:text-blue-600 font-bold text-sm tracking-wider uppercase border-b border-slate-50">Technical Specs</Link>
             <Link to="/careers" onClick={() => setIsOpen(false)} className="block px-3 py-2.5 text-slate-600 hover:text-blue-600 font-bold text-sm tracking-wider uppercase border-b border-slate-50">Careers</Link>
             <Link to="/contact" onClick={() => setIsOpen(false)} className="block px-3 py-2.5 text-slate-600 hover:text-blue-600 font-bold text-sm tracking-wider uppercase border-b border-slate-50">Contact Us</Link>
             <div className="pt-4 flex items-center justify-between">

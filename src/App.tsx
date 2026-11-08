@@ -10,8 +10,6 @@ import Cart from "./pages/Cart";
 import Contact from "./pages/Contact";
 import About from "./pages/About";
 import Applications from "./pages/Applications";
-import CustomProjects from "./pages/CustomProjects";
-import Resources from "./pages/Resources";
 import Careers from "./pages/Careers";
 import Admin from "./pages/Admin";
 
@@ -79,8 +77,6 @@ export default function App() {
                 <Route path="/catalog" element={<Catalog />} />
                 <Route path="/product/:id" element={<ProductDetail />} />
                 <Route path="/applications" element={<Applications />} />
-                <Route path="/custom-projects" element={<CustomProjects />} />
-                <Route path="/resources" element={<Resources />} />
                 <Route path="/careers" element={<Careers />} />
                 <Route path="/cart" element={<Cart />} />
                 <Route path="/contact" element={<Contact />} />
